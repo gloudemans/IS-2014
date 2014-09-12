@@ -58,11 +58,11 @@ class RbmStack:
         for iLayer in range(len(self.oaLayer)-1):
         
             # Initialize random weights while adding extra biases
-            self.oaLayer[iLayer].raaW = numpy.random.randn(self.oaLayer[iLayer+0].iSize+1, self.oaLayer[iLayer+1].iSize+1) * self.rInitialWeightVariance
+            self.oaLayer[iLayer].raaW = numpy.random.randn(self.oaLayer[iLayer+0].iSize, self.oaLayer[iLayer+1].iSize) * self.rInitialWeightVariance
 
             # Clear the biases
-            self.oaLayer[iLayer].raaW[:,-1] = 0
-            self.oaLayer[iLayer].raaW[-1,:] = 0
+            self.oaLayer[iLayer].raV = numpy.zeros(self.oaLayer[iLayer+0].iSize)
+            self.oaLayer[iLayer].raH = numpy.zeros(self.oaLayer[iLayer+1].iSize)
                   
     ## TrainAutoencoder
     # Perform greedy pre-training of the network using the specified
@@ -84,15 +84,19 @@ class RbmStack:
         # For each layer pair...
         for iLayer in range(len(self.oaLayer)-1):
 
-            # Create a delta array to retain momementum state
+            # Create a delta array to retain momentum state
             raaDelta = numpy.zeros(self.oaLayer[iLayer].raaW.shape)
+            raDeltaV = numpy.zeros(self.oaLayer[iLayer].raV.shape)
+            raDeltaH = numpy.zeros(self.oaLayer[iLayer].raH.shape)
 
             # Create a diff array to retain current update
             raaDiff = numpy.zeros(self.oaLayer[iLayer].raaW.shape)
+            raaDiffV = numpy.zeros(self.oaLayer[iLayer].raV.shape)
+            raaDiffH = numpy.zeros(self.oaLayer[iLayer].raH.shape)
             
             # Create an array to retain the layer output for 
             # training the next layer
-            raaY = numpy.zeros((iSamples, self.oaLayer[iLayer].raaW.shape[1]-1))
+            raaY = numpy.zeros((iSamples, self.oaLayer[iLayer].raaW.shape[1]))
             
             # Get short references to layer parameters
             sActivationUp = self.oaLayer[iLayer].sActivationUp
@@ -134,7 +138,7 @@ class RbmStack:
                         raaV0[baaV] = 0
                         
                     # Advance the markov chain V0->H1
-                    raaH1d, raaH1s = self.UpdateStates(sActivationUp, self.oaLayer[iLayer].raaW, raaV0, rDropV, True)
+                    raaH1d, raaH1s = self.UpdateStates(sActivationUp, self.oaLayer[iLayer].raaW, self.oaLayer[iLayer].raH, raaV0, rDropV, True)
 
                     # If stochastic sampling is enabled...
                     if (bSample):
@@ -157,7 +161,7 @@ class RbmStack:
                         raaH1[baaH] = 0
 
                     # Advance the markov chain H1->V2
-                    raaV2, junk  = self.UpdateStates(sActivationDn, self.oaLayer[iLayer].raaW.T, raaH1, rDropH)
+                    raaV2, junk  = self.UpdateStates(sActivationDn, self.oaLayer[iLayer].raaW.T, self.oaLayer[iLayer].raV, raaH1, rDropH)
 
                     # If we need to drop visible units...
                     if (rDropV>0):
@@ -166,7 +170,7 @@ class RbmStack:
                         raaV2[baaV] = 0
 
                     # Advance the markov chain V2->H3
-                    raaH3, junk  = self.UpdateStates(sActivationUp, self.oaLayer[iLayer].raaW,  raaV2, rDropV)
+                    raaH3, junk  = self.UpdateStates(sActivationUp, self.oaLayer[iLayer].raaW, self.oaLayer[iLayer].raH, raaV2, rDropV)
 
 
                     # If we need to drop hidden units...
@@ -200,20 +204,16 @@ class RbmStack:
 
                         # Compute the average difference between positive phase 
                         # up(0,1) and negative phase up(2,3) correlations
-                        raaDiff[:-1,:-1] = numpy.multiply( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) , raaN)
+                        raaDiff = numpy.multiply( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) , raaN)
                         
                     else:
                         
                         # Scale all weights uniformly
-                        raaDiff[:-1,:-1] = ( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) )*rScale 
+                        raaDiff = ( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) )*rScale 
                       
                     # Compute bias gradients
                     raDiffV = numpy.sum(raaV0-raaV2,axis=0)*rScale              
                     raDiffH = numpy.sum(raaH1-raaH3,axis=0)*rScale
-
-                    # Augment weight differences with biases
-                    raaDiff[-1,:-1] = raDiffH
-                    raaDiff[:-1,-1] = raDiffV.T
 
                     # Update the weight delta array using the current momentum and
                     # learning rate
@@ -226,10 +226,10 @@ class RbmStack:
                     if (rDropV):
                         
                         # Recompute H1 with no dropout
-                        raaY[ia,:], junk = self.UpdateStates(sActivationUp, self.oaLayer[iLayer].raaW, raaX[ia,:], 0)
+                        raaY[ia,:], junk = self.UpdateStates(sActivationUp, self.oaLayer[iLayer].raaW, self.oaLayer[iLayer].raH, raaX[ia,:], 0)
                         
                         # Recompute V2 based on the new H1
-                        raaV2, junk = self.UpdateStates(sActivationDn, self.oaLayer[iLayer].raaW.T, raaY[ia,:], 0) 
+                        raaV2, junk = self.UpdateStates(sActivationDn, self.oaLayer[iLayer].raaW.T, self.oaLayer[iLayer].raV, raaY[ia,:], 0) 
                         
                     else:
                         
@@ -240,7 +240,7 @@ class RbmStack:
                         if (rDropH or bSample):
                             
                             # Recompute V2
-                            raaV2, junk = self.UpdateStates(sActivationDn, self.oaLayer[iLayer].raaW.T, raaY[ia,:], 0) 
+                            raaV2, junk = self.UpdateStates(sActivationDn, self.oaLayer[iLayer].raaW.T, self.oaLayer[iLayer].raV, raaY[ia,:], 0) 
                     
                     # Gather error statistics for this minibatch
                     rSe, rE = self.GetErrors(raaX[ia,:], raaV2, sActivationDn)
@@ -282,7 +282,7 @@ class RbmStack:
     # * raaY - returns the output layer states
     # * baaY - returns the stochastic output states
     
-    def UpdateStates(self, sType, raaW, raaX, rDropout=0, bSample=False):
+    def UpdateStates(self, sType, raaW, raB, raaX, rDropout=0, bSample=False):
        
         baaY = [];
 
@@ -292,7 +292,10 @@ class RbmStack:
         
         # Compute activations
         iRows = raaX.shape[0]
-        raaA = numpy.dot( numpy.concatenate( (raaX*rScale, numpy.ones(iRows).reshape(iRows,1) ), axis=1), raaW[:,:-1] )
+        raaA = numpy.dot(raaX*rScale, raaW)
+
+        for iRow in range(iRows):
+            raaA[iRow,:] += raB
             
         # Depending on the activation type...
         if (sType=="Logistic"):
@@ -863,10 +866,10 @@ def Test():
     iEpochs = 10
 
     # Read the MNIST dataset as a pandas.DataFrame
-    df = pandas.read_pickle("..\Datasets\MNIST\MNIST.pkl")
+    df = pandas.read_pickle("../Datasets/MNIST/MNIST.pkl")
 
     # Retrieve the pixel columns and scale them from zero to one
-    raaX = numpy.array(df.ix[:,0:783])/256.0
+    raaX = numpy.array(df.ix[:100,0:783])/256.0
 
     # Create 784 x 1000 x 30 rbm layers
     oaLayers = [Layer(raaX.shape[1],iEpochs),Layer(1000,iEpochs),Layer(30,iEpochs)]
@@ -881,4 +884,6 @@ def Test():
     oRbmStack.TrainAutoencoder(raaX, oOptions)
 
     #print(o.oaLayer[1].raaW)
+
+Test()
 
