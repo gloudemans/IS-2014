@@ -1,4 +1,5 @@
 import numpy
+import cudamat
 
 #RbmStack
 # This class implements a stack of restricted Boltzmann machines. It 
@@ -77,7 +78,11 @@ class RbmStack:
     # *oOptions.oaLayer[iLayer].baSample[iEpoch]
 
     def TrainAutoencoder(self, raaX, oOptions):
-     
+
+        # initialize cudamat
+        cudamat.init()
+        cudamat.CUDAMatrix.init_random(seed = 42)
+
         # Count the number of training samples
         iSamples = raaX.shape[0]
                   
@@ -90,7 +95,7 @@ class RbmStack:
             raDeltaH = numpy.zeros(self.oaLayer[iLayer].raH.shape)
 
             # Create a diff array to retain current update
-            raaDiff = numpy.zeros(self.oaLayer[iLayer].raaW.shape)
+            raaDiff  = numpy.zeros(self.oaLayer[iLayer].raaW.shape)
             raaDiffV = numpy.zeros(self.oaLayer[iLayer].raV.shape)
             raaDiffH = numpy.zeros(self.oaLayer[iLayer].raH.shape)
             
@@ -101,6 +106,10 @@ class RbmStack:
             # Get short references to layer parameters
             sActivationUp = self.oaLayer[iLayer].sActivationUp
             sActivationDn = self.oaLayer[iLayer].sActivationDn
+
+            #raaW = cudamat.CUDAMatrix(self.oaLayer[iLayer].raaW)
+            #raV  = cudamat.CUDAMatrix(self.oaLayer[iLayer].raV)
+            #raH  = cudamat.CUDAMatrix(self.oaLayer[iLayer].raH)
             
             # For each training epoch...
             for iEpoch in range(oOptions.iEpochs):
@@ -138,7 +147,7 @@ class RbmStack:
                         raaV0[baaV] = 0
                         
                     # Advance the markov chain V0->H1
-                    raaH1d, raaH1s = self.UpdateStates(sActivationUp, self.oaLayer[iLayer].raaW, self.oaLayer[iLayer].raH, raaV0, rDropV, True)
+                    raaH1d, raaH1s = self._UpdateStates(sActivationUp, self.oaLayer[iLayer].raaW, self.oaLayer[iLayer].raH, raaV0, rDropV, True)
 
                     # If stochastic sampling is enabled...
                     if (bSample):
@@ -161,7 +170,7 @@ class RbmStack:
                         raaH1[baaH] = 0
 
                     # Advance the markov chain H1->V2
-                    raaV2, junk  = self.UpdateStates(sActivationDn, self.oaLayer[iLayer].raaW.T, self.oaLayer[iLayer].raV, raaH1, rDropH)
+                    raaV2, junk  = self._UpdateStates(sActivationDn, self.oaLayer[iLayer].raaW.T, self.oaLayer[iLayer].raV, raaH1, rDropH)
 
                     # If we need to drop visible units...
                     if (rDropV>0):
@@ -170,7 +179,7 @@ class RbmStack:
                         raaV2[baaV] = 0
 
                     # Advance the markov chain V2->H3
-                    raaH3, junk  = self.UpdateStates(sActivationUp, self.oaLayer[iLayer].raaW, self.oaLayer[iLayer].raH, raaV2, rDropV)
+                    raaH3, junk  = self._UpdateStates(sActivationUp, self.oaLayer[iLayer].raaW, self.oaLayer[iLayer].raH, raaV2, rDropV)
 
 
                     # If we need to drop hidden units...
@@ -226,10 +235,10 @@ class RbmStack:
                     if (rDropV):
                         
                         # Recompute H1 with no dropout
-                        raaY[ia,:], junk = self.UpdateStates(sActivationUp, self.oaLayer[iLayer].raaW, self.oaLayer[iLayer].raH, raaX[ia,:], 0)
+                        raaY[ia,:], junk = self._UpdateStates(sActivationUp, self.oaLayer[iLayer].raaW, self.oaLayer[iLayer].raH, raaX[ia,:], 0)
                         
                         # Recompute V2 based on the new H1
-                        raaV2, junk = self.UpdateStates(sActivationDn, self.oaLayer[iLayer].raaW.T, self.oaLayer[iLayer].raV, raaY[ia,:], 0) 
+                        raaV2, junk = self._UpdateStates(sActivationDn, self.oaLayer[iLayer].raaW.T, self.oaLayer[iLayer].raV, raaY[ia,:], 0) 
                         
                     else:
                         
@@ -240,7 +249,7 @@ class RbmStack:
                         if (rDropH or bSample):
                             
                             # Recompute V2
-                            raaV2, junk = self.UpdateStates(sActivationDn, self.oaLayer[iLayer].raaW.T, self.oaLayer[iLayer].raV, raaY[ia,:], 0) 
+                            raaV2, junk = self._UpdateStates(sActivationDn, self.oaLayer[iLayer].raaW.T, self.oaLayer[iLayer].raV, raaY[ia,:], 0) 
                     
                     # Gather error statistics for this minibatch
                     rSe, rE = self.GetErrors(raaX[ia,:], raaV2, sActivationDn)
@@ -556,7 +565,7 @@ class RbmStack:
             # Current layer outputs are the next layer inputs
             raaX = raaY
 
-    def _UpdateStates(self, sType, _raaW, _raaX, rDropout=0, bSample=False):
+    def _UpdateStates(self, sType, raaW, raB, raaX, rDropout=0, bSample=False):
        
         _baaY = cudamat.CUDAMatrix(numpy.atleast_2d(0))
 
@@ -571,11 +580,11 @@ class RbmStack:
         #_raaA = cudamat.CUDAMatrix(raaA)
 
         #_raaX = cudamat.empty((raaX.shape[0],raaX.shape[1]+1);
-        #_raaX = cudamat.CUDAMatrix(raaX)
+        _raaX = cudamat.CUDAMatrix(raaX)
         _raaX = _raaX.mult(rScale)
-        _raaW = cudamat.CUDAMatrix(raaW[:-1,:-1])
+        _raaW = cudamat.CUDAMatrix(raaW)
 
-        _raaB = cudamat.CUDAMatrix(numpy.atleast_2d(raaW[-1,:-1]))
+        _raaB = cudamat.CUDAMatrix(numpy.atleast_2d(raB))
         _raaA = _raaX.dot(_raaW)
         _raaA.add_row_vec(_raaB)
 
