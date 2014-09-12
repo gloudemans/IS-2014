@@ -331,7 +331,7 @@ class RbmStack:
 
         return(raaY, baaY)
 
-       def _TrainAutoencoder(self, raaX, oOptions):
+    def _TrainAutoencoder(self, raaX, oOptions):
      
         # initialize cudamat
         cudamat.cublas_init()
