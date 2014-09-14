@@ -77,39 +77,61 @@ class RbmStack:
     # *oOptions.oaLayer[iLayer].raRate[iEpoch]
     # *oOptions.oaLayer[iLayer].baSample[iEpoch]
 
-    def TrainAutoencoder(self, raaX, oOptions):
+    def TrainAutoencoder(self, _raaX, oOptions):
 
         # initialize cudamat
         cudamat.init()
         cudamat.CUDAMatrix.init_random(seed = 42)
 
         # Count the number of training samples
+        raaX = cudamat.CUDAMatrix(_raaX);
         iSamples = raaX.shape[0]
                   
         # For each layer pair...
         for iLayer in range(len(self.oaLayer)-1):
 
+            print('iLayer={0}'.format(iLayer))
+
+            # Clone layer weights on device
+            raaW = cudamat.CUDAMatrix(self.oaLayer[iLayer].raaW)
+            raV  = cudamat.CUDAMatrix(numpy.atleast_2d(self.oaLayer[iLayer].raV))
+            raH  = cudamat.CUDAMatrix(numpy.atleast_2d(self.oaLayer[iLayer].raH))
+
+            # Measure this layer
+            iVs = self.oaLayer[iLayer].raaW.shape[0]
+            iHs = self.oaLayer[iLayer].raaW.shape[1]
+
             # Create a delta array to retain momentum state
-            raaDelta = numpy.zeros(self.oaLayer[iLayer].raaW.shape)
-            raDeltaV = numpy.zeros(self.oaLayer[iLayer].raV.shape)
-            raDeltaH = numpy.zeros(self.oaLayer[iLayer].raH.shape)
+            raaDelta = cudamat.zeros((iVs,iHs))
+            raDeltaV = cudamat.zeros((iVs,1))
+            raDeltaH = cudamat.zeros((iHs,1))
 
             # Create a diff array to retain current update
-            raaDiff  = numpy.zeros(self.oaLayer[iLayer].raaW.shape)
-            raaDiffV = numpy.zeros(self.oaLayer[iLayer].raV.shape)
-            raaDiffH = numpy.zeros(self.oaLayer[iLayer].raH.shape)
+            raaDiff  = cudamat.empty((iVs,iHs))
+            raDiffV  = cudamat.empty((1,iVs))
+            raDiffH  = cudamat.empty((1,iHs))
             
             # Create an array to retain the layer output for 
             # training the next layer
-            raaY = numpy.zeros((iSamples, self.oaLayer[iLayer].raaW.shape[1]))
+            raaY = cudamat.empty((iSamples, iHs))
             
             # Get short references to layer parameters
             sActivationUp = self.oaLayer[iLayer].sActivationUp
             sActivationDn = self.oaLayer[iLayer].sActivationDn
 
-            raaW = cudamat.CUDAMatrix(self.oaLayer[iLayer].raaW)
-            raV  = cudamat.CUDAMatrix(numpy.atleast_2d(self.oaLayer[iLayer].raV))
-            raH  = cudamat.CUDAMatrix(numpy.atleast_2d(self.oaLayer[iLayer].raH))
+            raaHA  = cudamat.empty((self.iBatchSamples,iHs))
+            raaH1d = cudamat.empty((self.iBatchSamples,iHs))
+            raaH1s = cudamat.empty((self.iBatchSamples,iHs))
+            raaH3  = cudamat.empty((self.iBatchSamples,iHs))
+            baaH   = cudamat.empty((self.iBatchSamples,iHs))
+
+            raaVA  = cudamat.empty((self.iBatchSamples,iVs))
+            raaV0  = cudamat.empty((self.iBatchSamples,iVs))
+            raaV0.copy_to_host()
+            raaV2  = cudamat.empty((self.iBatchSamples,iVs))
+            baaV   = cudamat.empty((self.iBatchSamples,iVs))
+
+            junk = 0;
             
             # For each training epoch...
             for iEpoch in range(oOptions.iEpochs):
@@ -131,23 +153,20 @@ class RbmStack:
                 # While training samples remain...
                 while (iIndex<iSamples):
 
-                    # Compute an indexer
-                    ia = range(iIndex,min(iIndex+self.iBatchSamples,iSamples))
-
-                    # Get a batch of inputs
-                    raaV0 = numpy.copy(raaX[ia,:])
+                    # Get a batch of inputs in raaV0
+                    raaX.get_row_slice(iIndex, iIndex+self.iBatchSamples, target=raaV0)
                     
                     # If we need to drop visible units...
                     if (rDropV>0):
                     
                         # Compute a mask
-                        baaV = numpy.random.random(raaV0.shape)<rDropV
-
-                        # Clear dropped states
-                        raaV0[baaV] = 0
+                        baaV.fill_with_rand()
+                        baaV.greater_than(rDropV)
+                        raaV0.mult(baaV)
 
                     # Advance the markov chain V0->H1
-                    raaH1d, raaH1s = self._UpdateStates(sActivationUp, raaW, raH, raaV0, rDropV, True)
+                    # raaH1d, raaH1s = self._UpdateStates(sActivationUp, raaW, raH, raaV0, rDropV, True)
+                    self._UpdateStates(sActivationUp, raaW, raH, raaV0, raaHA, raaH1d, raaH1s, rDropV, True)
 
                     # If stochastic sampling is enabled...
                     if (bSample):
@@ -164,32 +183,32 @@ class RbmStack:
                     if (rDropH>0):
                         
                         # Compute a mask
-                        baaH = numpy.random.random(raaH1.shape) < rDropH
-
-                        # Clear dropped states
-                        raaH1[baaH] = 0
+                        baaH.fill_with_rand()
+                        baaH.greater_than(rDropH)
+                        raaH1.mult(baaH)
 
                     # Advance the markov chain H1->V2
-                    raaV2, junk  = self._UpdateStates(sActivationDn, raaW.T, raV, raaH1, rDropH)
+                    # raaV2, junk  = self._UpdateStates(sActivationDn, raaW.T, raV, raaH1, rDropH)
+                    self._UpdateStates(sActivationUp, raaW.T, raV, raaH1, raaVA, raaV2, junk, rDropH)
 
                     # If we need to drop visible units...
                     if (rDropV>0):
                         
                         # Clear dropped states
-                        raaV2[baaV] = 0
+                        raaV2.mult(baaV)
 
                     # Advance the markov chain V2->H3
-                    raaH3, junk  = self._UpdateStates(sActivationUp, raaW, raH, raaV2, rDropV)
-
+                    # raaH3, junk  = self._UpdateStates(sActivationUp, raaW, raH, raaV2, rDropV)
+                    self._UpdateStates(sActivationUp, raaW, raH, raaV2, raaHA, raaH3, junk, rDropV)
 
                     # If we need to drop hidden units...
                     if (rDropH>0):
                         
                         # Clear dropped states
-                        raaH3[baaH] = 0
+                        raaH3.mult(baaH)
 
                     # Scale factor to average this batch
-                    rScale = 1/len(ia)
+                    rScale = 1/self.iBatchSamples
                     
                     # If normalizing the dropout gradient by the number
                     # of weight updates rather the number of batch
@@ -200,76 +219,100 @@ class RbmStack:
                         if (not rDropV):
                             
                             # Construct a null dropout matrix
-                            baaV = numpy.zeros(raaV0.shape)
+                            baaV.assign(1)
                         
                         # If no hidden layer dropout...
                         if (not rDropH):
                             
                             # Construct a null dropout matrix 
-                            baaH = numpy.zeros(raaH1.shape)   
+                            baaH.assign(1)   
                         
                         # Compute normalizer matrix
-                        raaN = 1./(double(~baaV).T*(~baaH))
+                        #raaN = 1./(double(~baaV).T*(~baaH))
+                        
+                        cudamat.dot(baaV.T,baaH,raaN)
+                        raaN.reciprocal()
 
                         # Compute the average difference between positive phase 
                         # up(0,1) and negative phase up(2,3) correlations
-                        raaDiff = numpy.multiply( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) , raaN)
-                        
+                        # raaDiff = numpy.multiply( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) , raaN)
+                        cudamat.dot(raaV0.T,raaH1,raaDiff)
+                        raaDiff.subtract_dot(raaV2.T,raaH3)
+                        raaDiff.mult(raaN)
+
                     else:
                         
                         # Scale all weights uniformly
-                        raaDiff = ( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) )*rScale 
-                      
+                        #raaDiff = ( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) )*rScale 
+                        cudamat.dot(raaV0.T,raaH1,raaDiff)
+                        raaDiff.subtract_dot(raaV2.T,raaH3)
+                        raaDiff.mult(rScale)
+
                     # Compute bias gradients
-                    raDiffV = numpy.sum(raaV0-raaV2,axis=0)*rScale              
-                    raDiffH = numpy.sum(raaH1-raaH3,axis=0)*rScale
+                    #raDiffV = numpy.sum(raaV0-raaV2,axis=0)*rScale              
+                    #raDiffH = numpy.sum(raaH1-raaH3,axis=0)*rScale
+
+                    raaV0.sum(axis=0,mult=rScale).subtract(raaV2.sum(axis=0,mult=rScale),target=raDiffV)
+                    raaH1.sum(axis=0,mult=rScale).subtract(raaH3.sum(axis=0,mult=rScale),target=raDiffH)
 
                     # Update the weight delta array using the current momentum and
                     # learning rate
-                    raaDelta = raaDelta*rMomentum + raaDiff*rRate
+                    # raaDelta = raaDelta*rMomentum + raaDiff*rRate
+                    raaDelta.mult(rMomentum)
+                    raaDiff.mult(rRate)
+                    raaDelta.add(raaDiff)
 
                     # Updated the weights
                     #self.oaLayer[iLayer].raaW = self.oaLayer[iLayer].raaW + raaDelta
-                    raaW.add(cudamat.CUDAMatrix(raaDelta))
+                    raaW.add(raaDelta)
                     
                     # If the visible layer used dropout...
                     if (rDropV):
                         
+                        # Get a batch of inputs in raaV0
+                        raaX.get_row_slice(iIndex, iIndex+self.iBatchSamples, target=raaV0)
+
                         # Recompute H1 with no dropout
-                        raaY[ia,:], junk = self._UpdateStates(sActivationUp, raaW, raH, raaX[ia,:], 0)
+                        # raaH1d, raaH1s = self._UpdateStates(sActivationUp, raaW, raH, raaV0, 0)
+                        self._UpdateStates(sActivationUp, raaW, raH, raaV0, raaHA, raaH1d, raaH1s, 0)
+                        raaY.set_row_slice(iIndex, iIndex+self.iBatchSamples, raaH1d)
                         
                         # Recompute V2 based on the new H1
-                        raaV2, junk = self._UpdateStates(sActivationDn, raaW.T, raV, raaY[ia,:], 0) 
+                        # raaV2, junk  = self._UpdateStates(sActivationDn, raaW.T, raV, raaH1, 0)
+                        self._UpdateStates(sActivationUp, raaW.T, raV, raaH1d, raaVA, raaV2, junk, 0)
                         
                     else:
                         
                         # Use the prior computation
-                        raaY[ia,:] = raaH1d
+                        raaY.set_row_slice(iIndex, iIndex+self.iBatchSamples, raaH1d)
                         
                         # If the hidden layer used dropout or sampling...
                         if (rDropH or bSample):
                             
                             # Recompute V2
-                            raaV2, junk = self._UpdateStates(sActivationDn, raaW.T, raV, raaY[ia,:], 0) 
+                            self._UpdateStates(sActivationUp, raaW.T, raV, raaH1d, raaVA, raaV2, junk, 0)
                     
                     # Gather error statistics for this minibatch
-                    rSe, rE = self.GetErrors(raaX[ia,:], raaV2, sActivationDn)
+
+                    # Get a batch of inputs in raaV0
+                    raaX.get_row_slice(iIndex, iIndex+self.iBatchSamples, target=raaV0)
+                    rSe, rE = self.GetErrors(raaV0, raaV2, sActivationDn)
                     
                     # Accumulate total errors
                     rTotalSe = rTotalSe+rSe
                     rTotalE  = rTotalE + rE
                     
                     # Advance to the next minibatch
-                    iIndex = iIndex + len(ia)
+                    iIndex = iIndex + self.iBatchSamples
                 
                 # Finish the rmse calculation
-                rRmse = numpy.sqrt(rTotalSe/raaX.size)
+                rRmse = numpy.sqrt(rTotalSe/_raaX.size)
                 
                 # Record the error for this epoch
                 self.oaLayer[iLayer].raRmse[iEpoch] = rRmse 
                 
                 # Finish rmse calculation
-                rError = rTotalE/raaX.size
+                rError = rTotalE/_raaX.size
                 
                 # Record the error for this epoch
                 self.oaLayer[iLayer].raError[iEpoch] = rError
@@ -348,9 +391,9 @@ class RbmStack:
 
         return(raaY, baaY)
 
-    def _UpdateStates(self, sType, _raaW, _raaB, raaX, rDropout=0, bSample=False):
+    def _UpdateStates(self, sType, _raaW, _raaB, _raaX, _raaA, _raaY, _baaY, rDropout=0, bSample=False):
        
-        _baaY = cudamat.CUDAMatrix(numpy.atleast_2d(0))
+        #_baaY = cudamat.CUDAMatrix(numpy.atleast_2d(0))
 
         # Compute the scale factor to compensate for dropout so that
         # average activations remain the same
@@ -363,16 +406,16 @@ class RbmStack:
         #_raaA = cudamat.CUDAMatrix(raaA)
 
         #_raaX = cudamat.empty((raaX.shape[0],raaX.shape[1]+1);
-        _raaX = cudamat.CUDAMatrix(raaX)
+        #_raaX = cudamat.CUDAMatrix(raaX)
         _raaX = _raaX.mult(rScale)
         #_raaW = cudamat.CUDAMatrix(raaW)
 
         #_raaB = cudamat.CUDAMatrix(numpy.atleast_2d(raB))
-        _raaA = _raaX.dot(_raaW)
+        _raaX.dot(_raaW,_raaA)
         _raaA.add_row_vec(_raaB)
 
         # allocate outputs
-        _raaY = cudamat.empty(_raaA.shape)
+        #_raaY = cudamat.empty(_raaA.shape)
             
         # Depending on the activation type...
         if (sType=="Logistic"):
@@ -385,18 +428,18 @@ class RbmStack:
 
             # Compute output layer states
        #     raaY = raaA
-            _raaY.assign(_raaY)
+            _raaA.assign(_raaY)
 
         elif (sType=="HyperbolicTangent"):
 
             # Compute output layer states
         #    raaY = numpy.tanh(raaA)
-            _raaY.apply_tanh(_raaY)
+            _raaA.apply_tanh(_raaY)
                                           
         # If stochastic binary states are required...
         if (bSample):
 
-            _baaY = cudamat.empty(_raaY.shape)
+            # _baaY = cudamat.empty(_raaY.shape)
 
             # Depending on the activation type...
             if (sType=="Logistic"):
@@ -422,7 +465,7 @@ class RbmStack:
                 _baaY.sub(1)
                 _baaY.less_than(_raaY)
 
-        return(_raaY.asarray(), _baaY.asarray())
+        # return(_raaY.asarray(), _baaY.asarray())
     
     ## Autoencode
     # For each specified sample, autoencode the sample as follows.
@@ -546,25 +589,32 @@ class RbmStack:
         rEps = 1e-80         
         
         # Sum all squared errors
-        raaError = raaX-raaY
+        raaError = raaX.subtract(raaY)
+        raaError.mult(raaError)
 
-        rSe = numpy.sum(numpy.multiply(raaError,raaError))
-        
+        #rSe = numpy.sum(numpy.multiply(raaError,raaError))
+        rSe = raaError.sum(axis=0).sum(axis=1).asarray()
+
         # Depending on the activation def type
         if(sActivation=="Logistic"):
 
             # Compute the average cross entropy error
-            rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)) + numpy.multiply(1-raaX,numpy.log(1-raaY+rEps)))
+            #rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)) + numpy.multiply(1-raaX,numpy.log(1-raaY+rEps)))
+            pass
 
         elif(sActivation=="Linear"):
 
             # Compute the squared error
-            rE = rSe
+            #rE = rSe
+            pass
 
         elif(sActivation=="Softmax"):
 
             # Compute the average cross entropy error
-            rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)))
+            #rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)))
+            pass
+
+        rE = 0
             
         return(rSe, rE)
     
@@ -626,10 +676,10 @@ def Test():
     # Define classes used for RbmStack interfacing
     class Layer:
 
-        def __init__(self, iSize, iEpochs):
+        def __init__(self, iSize, iEpochs, sActivationUp='Logistic'):
             self.iSize = iSize
             self.raaW = object
-            self.sActivationUp = "Logistic"
+            self.sActivationUp = sActivationUp
             self.sActivationDn = "Logistic"
             self.raRmse     = numpy.zeros(iEpochs)
             self.raError    = numpy.zeros(iEpochs)
@@ -652,7 +702,7 @@ def Test():
         def __init__(self, iEpochs):
 
             self.iEpochs = iEpochs
-            self.oaLayer = [LayerOptions(iEpochs), LayerOptions(iEpochs)]  
+            self.oaLayer = [LayerOptions(iEpochs), LayerOptions(iEpochs), LayerOptions(iEpochs), LayerOptions(iEpochs), LayerOptions(iEpochs)]  
 
     # Specify epochs
     iEpochs = 10
@@ -661,10 +711,10 @@ def Test():
     df = pandas.read_pickle("../Datasets/MNIST/MNIST.pkl")
 
     # Retrieve the pixel columns and scale them from zero to one
-    raaX = numpy.array(df.ix[:1000,0:783])/256.0
+    raaX = numpy.array(df.ix[:59999,0:783])/256.0
 
     # Create 784 x 1000 x 30 rbm layers
-    oaLayers = [Layer(raaX.shape[1],iEpochs),Layer(1000,iEpochs),Layer(30,iEpochs)]
+    oaLayers = [Layer(raaX.shape[1],iEpochs),Layer(1000,iEpochs),Layer(500,iEpochs),Layer(250,iEpochs),Layer(30,iEpochs,sActivationUp='Linear')]
 
     # Create training options
     oOptions = Options(iEpochs)
