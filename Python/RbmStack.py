@@ -346,13 +346,16 @@ class RbmStack:
         # Compute the scale factor to compensate for dropout so that
         # average activations remain the same
         rScale = 1/(1-rDropout)
+
+        print(raaX.shape)
         
         # Compute activations
         iRows = raaX.shape[0]
+
         raaA = numpy.dot(raaX*rScale, raaW)
 
         for iRow in range(iRows):
-            raaA[iRow,:] += raB
+            raaA[iRow,:] = raaA[iRow,:] + raB
             
         # Depending on the activation type...
         if (sType=="Logistic"):
@@ -497,7 +500,7 @@ class RbmStack:
         while(iIndex<iSamples):
 
             # Compute an indexer
-            ia = iIndex+range(numpy.min(iIndex+iBatch,iSamples))
+            ia = range(iIndex, min(iIndex+iBatch,iSamples))
             
             # Extract pattern batch
             raaB = numpy.copy(raaX[ia,:])
@@ -506,13 +509,13 @@ class RbmStack:
             for iLayer in range(len(self.oaLayer)-1):
 
                 # Propagate states upward
-                raaB = UpdateStates(self, self.oaLayer[iLayer].sActivationUp, self.oaLayer[iLayer].raaW, raaB)
+                (raaB, junk) = self.UpdateStates(self.oaLayer[iLayer].sActivationUp, self.oaLayer[iLayer].raaW, self.oaLayer[iLayer].raH, raaB)
 
             # For each layer in the network...
-            for iLayer in range(len(self.oaLayer)-2, 0, -1):
+            for iLayer in range(len(self.oaLayer)-2, -1, -1):
 
                 # Propagate states downward:
-                raaB = UpdateStates(self, self.oaLayer[iLayer].sActivationDn, self.oaLayer[iLayer].raaW.T, raaB)
+                (raaB, junk) = self.UpdateStates(self.oaLayer[iLayer].sActivationDn, self.oaLayer[iLayer].raaW.T,self.oaLayer[iLayer].raV, raaB)
             
             # Save reconstruction states
             raaX[ia,:] = raaB
@@ -537,7 +540,7 @@ class RbmStack:
         iBatch = 1000
         
         # Autoencode the specified samples to form reconstructions
-        raaY = Autoencode(self, raaX)
+        raaY = self.Autoencode(raaX)
         
         # Measure the data
         iSamples = raaX.shape[0]
@@ -553,10 +556,10 @@ class RbmStack:
         while(iIndex<iSamples):
             
             # Compute an indexer
-            ia = iIndex + range(numpy.min(iIndex+iBatch,iSamples))
+            ia = range(iIndex, min(iIndex+iBatch,iSamples))
             
             # Get errors for this batch
-            rSe, rE = GetErrors(self, raaX[ia,:], raaY[ia,:], self.oaLayer[0].sActivationDn)
+            (rSe, rE) = self.GetErrors(raaX[ia,:], raaY[ia,:], self.oaLayer[0].sActivationDn)
             
             # Accumulate the error totals
             rTotalSe = rTotalSe+rSe
@@ -569,7 +572,7 @@ class RbmStack:
         rError = rTotalE/raaX.size
         
         # Root mean square error over all samples
-        rRmse  = numpy.sqrt(rTotalSe/raaX.size)
+        rRmse  = math.sqrt(rTotalSe/raaX.size)
         
         return(rRmse, rError)
     

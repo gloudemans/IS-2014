@@ -214,29 +214,28 @@ class MnistAutoencoder:
                 oaLayer[iLayer].sActivationDn))
              
         # Train the object
-        oModel.TrainAutoencoder(raaTrain[:10000,:], oOptions)
+        oModel.TrainAutoencoder(raaTrain[:1000,:], oOptions)
         
-    #     Log(sprintf('\n'))
+        Log('')
        
     #     # Save the trained autoencoder
     #     save(strcat(MnistAutoencoder.sModelPath,sName),'oModel')
 
-    #     # Compute training and test set errors
-    #     [rTrainRmse, rTrainError] = ComputeReconstructionError(oModel, raaTrain)
-    #     [rTestRmse,  rTestError]  = ComputeReconstructionError(oModel, raaTest)
+        # Compute training and test set errors
+        (rTrainRmse, rTrainError) = oModel.ComputeReconstructionError(raaTrain[:1000,:])
+    #    (rTestRmse,  rTestError)  = oModel.ComputeReconstructionError(raaTest[:1000,:])
 
     #     # Report performance
-    #     Log(sprintf('rTrainRmse= #.4f, rTrainError= #.4f\n', rTrainRmse, rTrainError))
-    #     Log(sprintf('rTestRmse=  #.4f, rTestError=  #.4f\n', rTestRmse,  rTestError))
-    #     Log(sprintf('\n'))
+        Log('rTrainRmse= {:.4f}, rTrainError= {:.4f}'.format(rTrainRmse, rTrainError))
+        Log('rTestRmse=  {:.4f}, rTestError=  {:.4f}'.format(rTestRmse,  rTestError))
+        Log('')
 
-    #     # Summary string (used to assemble a table in word)
-    #     Log(sprintf('XX: #d,#d,#d,#4d #4d #4d #4d #4d,', iEpochs, bSample, bDropout, iaSize))
-    #     for iLayer=1:4
-    #         Log(sprintf('#0.4f,', oModel.oaLayer(iLayer).raError(end)))
-    #     end
-    #     Log(sprintf('#0.4f,#0.4f,', rTrainRmse, rTrainError))
-    #     Log(sprintf('#0.4f,#0.4f\n', rTestRmse,  rTestError))
+        # Summary string (used to assemble a table in word)
+        Log('XX: {:d},{:d},{:d},{:4d} {:4d} {:4d} {:4d} {:4d}'.format(iEpochs, bSample, bDropout, iaSize[0], iaSize[1], iaSize[2], iaSize[3], iaSize[4]))
+        # for iLayer in range(4)
+        #     Log(sprintf('{:0.4f,}', oModel.oaLayer[iLayer].raError[end]))
+
+        Log('{:0.4f},{:0.4f},{:0.4f},{:0.4f}'.format(rTrainRmse, rTrainError,rTestRmse,  rTestError))
 
         # Close log file
         oLog.close()
