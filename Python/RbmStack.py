@@ -309,13 +309,13 @@ class RbmStack:
                 rRmse = numpy.sqrt(rTotalSe/_raaX.size)
                 
                 # Record the error for this epoch
-                self.oaLayer[iLayer].raRmse[iEpoch] = rRmse 
+                #self.oaLayer[iLayer].raRmse[iEpoch] = rRmse 
                 
                 # Finish rmse calculation
                 rError = rTotalE/_raaX.size
                 
                 # Record the error for this epoch
-                self.oaLayer[iLayer].raError[iEpoch] = rError
+                #self.oaLayer[iLayer].raError[iEpoch] = rError
 
                 # Report training progress
                 # oOptions.fEvent(iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse, rError)
@@ -711,7 +711,7 @@ def Test():
     df = pandas.read_pickle("../Datasets/MNIST/MNIST.pkl")
 
     # Retrieve the pixel columns and scale them from zero to one
-    raaX = numpy.array(df.ix[:59999,0:783])/256.0
+    raaX = numpy.array(df.ix[:9999,0:783])/256.0
 
     # Create 784 x 1000 x 30 rbm layers
     oaLayers = [Layer(raaX.shape[1],iEpochs),Layer(1000,iEpochs),Layer(500,iEpochs),Layer(250,iEpochs),Layer(30,iEpochs,sActivationUp='Linear')]
@@ -727,5 +727,7 @@ def Test():
 
     #print(o.oaLayer[1].raaW)
 
-Test()
+#import cProfile
+#cProfile.run('Test()')
+#Test()
 

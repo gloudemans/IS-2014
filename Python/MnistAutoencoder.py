@@ -8,25 +8,10 @@
 # * MnistAutoencoder.ViewFeatureDetectors(sModel) - Displays the first
 #   layer feature detectors learned by the model.
 
+import datetime
 import pandas
 import numpy
 import RbmStack
-
-# iEpochs = 100
-
-# df = pandas.read_pickle("MNIST.pkl")
-
-# raaX = numpy.array(df[0:784])
-
-# # #raaX = numpy.random.randn(iSamples,iInputs)
-# oaLayers = [RbmStack.Layer(raaX.shape[1],iEpochs),RbmStack.Layer(1000,iEpochs),RbmStack.Layer(30,iEpochs)]
-
-# oOptions = RbmStack.Options(iEpochs)
-
-# oRbmStack = RbmStack.RbmStack(oaLayers)
-# oRbmStack.TrainAutoencoder(raaX, oOptions)
-
-# #print(o.oaLayer[1].raaW)
 
 class MnistAutoencoder:
         
@@ -41,44 +26,42 @@ class MnistAutoencoder:
         def Go(iEpochs, bSample, bDropout, iaSize):
             
             # Define Hinton MNIST dropout recipe
-            raDropV = [       0.2,  0.0, 0.0,  0.0]
-            raDropH = [       0.5,  0.5, 0.5,  0.5]
+            raDropV = numpy.asarray([0.2,  0.0, 0.0,  0.0])
+            raDropH = numpy.asarray([0.5,  0.5, 0.5,  0.5])
 
             # Launch experiment
             MnistAutoencoder.RbmExperiment(raaTrain, raaTest, iaSize, iEpochs, bSample, raDropV*bDropout, raDropH*bDropout)
         
         # Load the mnist data
-        df = pandas.read_pickle("MNIST.pkl")
+        df = pandas.read_pickle("../Datasets/MNIST/MNIST.pkl")
 
-        raaTrain = numpy.array(df[df["subset"]==0].ix[:,0:784])
-        raaTest  = numpy.array(df[df["subset"]==1].ix[:,0:784])
+        raaTrain = numpy.array(df[df["subset"]==0].ix[:,0:784]/256.0)
+        raaTest  = numpy.array(df[df["subset"]==1].ix[:,0:784]/256.0)
 
         # Measure the training data
         [iSamples, iFeatures] = raaTrain.shape
     
         # Launch lots of experiments
         # (iEpochs, bSample, bDropout, iaSize)
-        Go( 10, 0, 0, [ iFeatures, 1000,  500,  250,   30])
-        Go( 10, 0, 1, [ iFeatures, 1000,  500,  250,   30])
-        Go( 10, 1, 0, [ iFeatures, 1000,  500,  250,   30])  
-        Go( 10, 1, 1, [ iFeatures, 1000,  500,  250,   30])
+        Go( 10, 0, 0, numpy.array([ iFeatures, 1000,  500,  250,   30]))
+        Go( 10, 0, 1, numpy.array([ iFeatures, 1000,  500,  250,   30]))
+        Go( 10, 1, 0, numpy.array([ iFeatures, 1000,  500,  250,   30])) 
+        Go( 10, 1, 1, numpy.array([ iFeatures, 1000,  500,  250,   30]))
         
-        Go( 10, 0, 0, [ iFeatures, 2000, 1000,  500,   30])
-        Go( 10, 0, 1, [ iFeatures, 2000, 1000,  500,   30])     
-        Go( 10, 1, 0, [ iFeatures, 2000, 1000,  500,   30])
-        Go( 10, 1, 1, [ iFeatures, 2000, 1000,  500,   30])
+        Go( 10, 0, 0, numpy.array([ iFeatures, 2000, 1000,  500,   30]))
+        Go( 10, 0, 1, numpy.array([ iFeatures, 2000, 1000,  500,   30]))     
+        Go( 10, 1, 0, numpy.array([ iFeatures, 2000, 1000,  500,   30]))
+        Go( 10, 1, 1, numpy.array([ iFeatures, 2000, 1000,  500,   30]))
         
-        Go( 50, 0, 0, [ iFeatures, 1000,  500,  250,   30])
-        Go( 50, 0, 1, [ iFeatures, 1000,  500,  250,   30])
-        Go( 50, 1, 0, [ iFeatures, 1000,  500,  250,   30])
-        Go( 50, 1, 1, [ iFeatures, 1000,  500,  250,   30])
+        Go( 50, 0, 0, numpy.array([ iFeatures, 1000,  500,  250,   30]))
+        Go( 50, 0, 1, numpy.array([ iFeatures, 1000,  500,  250,   30]))
+        Go( 50, 1, 0, numpy.array([ iFeatures, 1000,  500,  250,   30]))
+        Go( 50, 1, 1, numpy.array([ iFeatures, 1000,  500,  250,   30]))
         
-        Go( 50, 0, 0, [ iFeatures, 2000, 1000,  500,   30])
-        Go( 50, 0, 1, [ iFeatures, 2000, 1000,  500,   30])
-        Go( 50, 1, 0, [ iFeatures, 2000, 1000,  500,   30])
-        Go( 50, 1, 1, [ iFeatures, 2000, 1000,  500,   30])
-
-MnistAutoencoder.RunExperiments()
+        Go( 50, 0, 0, numpy.array([ iFeatures, 2000, 1000,  500,   30]))
+        Go( 50, 0, 1, numpy.array([ iFeatures, 2000, 1000,  500,   30]))
+        Go( 50, 1, 0, numpy.array([ iFeatures, 2000, 1000,  500,   30]))
+        Go( 50, 1, 1, numpy.array([ iFeatures, 2000, 1000,  500,   30]))
 
     ## RbmExperiment
     # Train an MNIST model with the specified training options.
@@ -92,128 +75,171 @@ MnistAutoencoder.RunExperiments()
     # * raDropH - specifies the hidden layer dropout probabilities
     
     def RbmExperiment(raaTrain, raaTest, iaSize, iEpochs, bSample, raDropV, raDropH):
-                                          
-        # Create momentum schedule
-        raMomentum = 0.9*numpy.ones((iEpochs,1)
-        raMomentum[0:5] = 0.5
-          
-        # Set the number of training epochs
-        oOptions.iEpochs = iEpochs
-        
-        # Set the event reporting callback
-        oOptions.fEvent = @Report
-        
-        # Create a default training rate vector
-        raRate = linspace(.1,.1,iEpochs)
-        
-        # Specify machine geometry
-        oaLayer(1).sActivationUp = 'Logistic'
-        oaLayer(1).sActivationDn = 'Logistic'
-        oaLayer(1).iSize = iaSize(1)
-        oOptions.oaLayer(1).raRate = raRate
-        oOptions.oaLayer(1).raMomentum = raMomentum
-        oOptions.oaLayer(1).raDropV = raDropV(1)*ones(iEpochs,1)
-        oOptions.oaLayer(1).raDropH = raDropH(1)*ones(iEpochs,1)
-        oOptions.oaLayer(1).baSample = bSample*ones(iEpochs,1)
-        
-        oaLayer(2).sActivationUp = 'Logistic'
-        oaLayer(2).sActivationDn = 'Logistic'
-        oaLayer(2).iSize = iaSize(2)
-        oOptions.oaLayer(2).raRate = raRate
-        oOptions.oaLayer(2).raMomentum = raMomentum
-        oOptions.oaLayer(2).raDropV = raDropV(2)*ones(iEpochs,1)
-        oOptions.oaLayer(2).raDropH = raDropH(2)*ones(iEpochs,1)
-        oOptions.oaLayer(2).baSample = bSample*ones(iEpochs,1)
-        
-        oaLayer(3).sActivationUp = 'Logistic'
-        oaLayer(3).sActivationDn = 'Logistic'
-        oaLayer(3).iSize = iaSize(3)
-        oOptions.oaLayer(3).raRate = raRate
-        oOptions.oaLayer(3).raMomentum = raMomentum
-        oOptions.oaLayer(3).raDropV = raDropV(3)*ones(iEpochs,1)
-        oOptions.oaLayer(3).raDropH = raDropH(3)*ones(iEpochs,1)
-        oOptions.oaLayer(3).baSample = bSample*ones(iEpochs,1)
-        
-        oaLayer(4).sActivationUp = 'Linear'
-        oaLayer(4).sActivationDn = 'Logistic'
-        oaLayer(4).iSize = iaSize(4)
-        oOptions.oaLayer(4).raRate = raRate/100
-        oOptions.oaLayer(4).raMomentum = raMomentum
-        oOptions.oaLayer(4).raDropV = raDropV(4)*ones(iEpochs,1)
-        oOptions.oaLayer(4).raDropH = raDropH(4)*ones(iEpochs,1)
-        oOptions.oaLayer(4).baSample = bSample*ones(iEpochs,1) 
-        
-        oaLayer(5).iSize = iaSize(5)
-        
-        # Construct the object
-        oModel = RbmStack(oaLayer)
-        
-        # Open the log file
-        oLog = fopen(strcat(MnistAutoencoder.sModelPath, 'Log.txt'), 'at')
-        
-        # Infer dropout flag
-        bDropout = max(raDropV+raDropH)>0
-        
-        # Build a filename for the model
-        sName = sprintf('iEpochs=#d bSample=#d bDropout=#d (#d #d #d #d #d)', iEpochs, bSample, bDropout, iaSize)
-        Log(sprintf('#s\n',sName))
-        
-        # Get clock time as a string
-        sNow = datestr(now,'yyyy-mmm-dd HH MM SS')
-        Log(sprintf('sNow= #s\n\n',sNow))
-        
-        # Summarize the machine geometry
-        for iLayer = 1:length(oaLayer)-1
-            Log(sprintf('iLayer=#d, iSizeV=#5d, iSizeH=#5d, sActivationUp=#10s, sActivationDn=#10s\n',...
-                iLayer,...
-                oaLayer(iLayer).iSize,...
-                oaLayer(iLayer+1).iSize,...
-                oaLayer(iLayer).sActivationUp,...
-                oaLayer(iLayer).sActivationDn))
-        
-        # Newline
-        Log(sprintf('\n'))
-        
-        # Train the object
-        TrainAutoencoder(oModel, raaTrain, oOptions)
-        
-        Log(sprintf('\n'))
-       
-        # Save the trained autoencoder
-        save(strcat(MnistAutoencoder.sModelPath,sName),'oModel')
 
-        # Compute training and test set errors
-        [rTrainRmse, rTrainError] = ComputeReconstructionError(oModel, raaTrain)
-        [rTestRmse,  rTestError]  = ComputeReconstructionError(oModel, raaTest)
+        # Define classes used for RbmStack interfacing
+        class Layer:
 
-        # Report performance
-        Log(sprintf('rTrainRmse= #.4f, rTrainError= #.4f\n', rTrainRmse, rTrainError))
-        Log(sprintf('rTestRmse=  #.4f, rTestError=  #.4f\n', rTestRmse,  rTestError))
-        Log(sprintf('\n'))
+            def __init__(self, iSize, sActivationUp='Logistic', sActivationDn='Logistic'):
+                self.iSize = iSize
+                self.raaW = object
+                self.sActivationUp = sActivationUp
+                self.sActivationDn = sActivationDn
 
-        # Summary string (used to assemble a table in word)
-        Log(sprintf('XX: #d,#d,#d,#4d #4d #4d #4d #4d,', iEpochs, bSample, bDropout, iaSize))
-        for iLayer=1:4
-            Log(sprintf('#0.4f,', oModel.oaLayer(iLayer).raError(end)))
-        end
-        Log(sprintf('#0.4f,#0.4f,', rTrainRmse, rTrainError))
-        Log(sprintf('#0.4f,#0.4f\n', rTestRmse,  rTestError))
+        class LayerOptions:
 
-        # Close log file
-        fclose(oLog)
-         
+            def __init__(self, raDropV, raDropH, raMomentum, raRate, baSample):
+
+                self.raDropV    = raDropV
+                self.raDropH    = raDropH
+                self.raMomentum = raMomentum
+                self.raRate     = raRate
+                self.baSample   = baSample
+
+        class Options:
+
+            def __init__(self, iEpochs, oaLayer, fEvent=None):
+
+                self.iEpochs = iEpochs
+                self.oaLayer = oaLayer
+                self.fEvent  = fEvent
+
         # Log a line of output to both the console and the log file
         def Log(sLine):
                             
-            fprintf(     '#s', sLine)
-            fprintf(oLog,'#s', sLine)
+            print('{:s}'.format(sLine))
+            # print(oLog,'#s', sLine)
         
         # Process a training event 
         def Report(iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse, rError):
             
             # Construct event report string
-            Log(sprintf('iLayer=#d, iEpoch=#3d, bSample=#d, rDropV=#.2f, rDropH=#.2f, rRate=#.4f, rMomentum=#.4f, rRmse=#.4f, rError=#.4f\n', iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse, rError))
+            Log('iLayer={:d}, iEpoch={:3d}, bSample={:d}, rDropV={:.2f}, rDropH={:.2f}, rRate={:.4f}, rMomentum={:.4f}, rRmse={:.4f}, rError={:.4f}\n'.format(
+                iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse, rError))   
+
+        # Create momentum schedule
+        raMomentum = 0.9*numpy.ones(iEpochs)
+        raMomentum[0:5] = 0.5
+                 
+        # Create a default training rate vector
+        raRate = numpy.linspace(.1,.1,iEpochs)
+
+    #     # Specify machine geometry
+    #     oaLayer(1).sActivationUp = 'Logistic'
+    #     oaLayer(1).sActivationDn = 'Logistic'
+    #     oaLayer(1).iSize = iaSize(1)
+    #     oOptions.oaLayer(1).raRate = raRate
+    #     oOptions.oaLayer(1).raMomentum = raMomentum
+    #     oOptions.oaLayer(1).raDropV = raDropV(1)*ones(iEpochs,1)
+    #     oOptions.oaLayer(1).raDropH = raDropH(1)*ones(iEpochs,1)
+    #     oOptions.oaLayer(1).baSample = bSample*ones(iEpochs,1)
+
+    #     oaLayer(2).sActivationUp = 'Logistic'
+    #     oaLayer(2).sActivationDn = 'Logistic'
+    #     oaLayer(2).iSize = iaSize(2)
+    #     oOptions.oaLayer(2).raRate = raRate
+    #     oOptions.oaLayer(2).raMomentum = raMomentum
+    #     oOptions.oaLayer(2).raDropV = raDropV(2)*ones(iEpochs,1)
+    #     oOptions.oaLayer(2).raDropH = raDropH(2)*ones(iEpochs,1)
+    #     oOptions.oaLayer(2).baSample = bSample*ones(iEpochs,1)
+        
+    #     oaLayer(3).sActivationUp = 'Logistic'
+    #     oaLayer(3).sActivationDn = 'Logistic'
+    #     oaLayer(3).iSize = iaSize(3)
+    #     oOptions.oaLayer(3).raRate = raRate
+    #     oOptions.oaLayer(3).raMomentum = raMomentum
+    #     oOptions.oaLayer(3).raDropV = raDropV(3)*ones(iEpochs,1)
+    #     oOptions.oaLayer(3).raDropH = raDropH(3)*ones(iEpochs,1)
+    #     oOptions.oaLayer(3).baSample = bSample*ones(iEpochs,1)
+        
+    #     oaLayer(4).sActivationUp = 'Linear'
+    #     oaLayer(4).sActivationDn = 'Logistic'
+    #     oaLayer(4).iSize = iaSize(4)
+    #     oOptions.oaLayer(4).raRate = raRate/100
+    #     oOptions.oaLayer(4).raMomentum = raMomentum
+    #     oOptions.oaLayer(4).raDropV = raDropV(4)*ones(iEpochs,1)
+    #     oOptions.oaLayer(4).raDropH = raDropH(4)*ones(iEpochs,1)
+    #     oOptions.oaLayer(4).baSample = bSample*ones(iEpochs,1) 
+        
+    #     oaLayer(5).iSize = iaSize(5)
+
+        oaLayer = \
+            [
+                Layer(iaSize[0]),
+                Layer(iaSize[1]),
+                Layer(iaSize[2]),
+                Layer(iaSize[3]),                
+                Layer(iaSize[4], 'Linear','Logistic')
+            ]
+
+        oOptions = Options(
+            iEpochs,
+            [ 
+                LayerOptions(raDropV[0]*numpy.ones((iEpochs)), raDropH[0]*numpy.ones((iEpochs)), raMomentum, raRate, bSample*numpy.ones((iEpochs))),
+                LayerOptions(raDropV[1]*numpy.ones((iEpochs)), raDropH[1]*numpy.ones((iEpochs)), raMomentum, raRate, bSample*numpy.ones((iEpochs))),
+                LayerOptions(raDropV[2]*numpy.ones((iEpochs)), raDropH[2]*numpy.ones((iEpochs)), raMomentum, raRate, bSample*numpy.ones((iEpochs))),
+                LayerOptions(raDropV[3]*numpy.ones((iEpochs)), raDropH[3]*numpy.ones((iEpochs)), raMomentum, raRate/100, bSample*numpy.ones((iEpochs))) 
+            ],
+            Report
+            ) 
+        
+        # Construct the object
+        oModel = RbmStack.RbmStack(oaLayer)
+        
+        # Open the log file
+        oLog = open('Log.txt', 'at')
+        
+        # Infer dropout flag
+        bDropout = max(raDropV+raDropH)>0
+        
+        # Build a filename for the model
+        sName = 'iEpochs={:d} bSample={:d} bDropout={:d} ({:d} {:d} {:d} {:d} {:d})'.format(iEpochs, bSample, bDropout, iaSize[0], iaSize[1], iaSize[2], iaSize[3], iaSize[4])
+        Log(sName)
+        
+        # Get clock time as a string
+        sNow = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        Log(sNow)
+
+        # Summarize the machine geometry
+        for iLayer in range(0,len(oaLayer)-1):
+            Log('iLayer={:d}, iSizeV={:5d}, iSizeH={:5d}, sActivationUp={:10s}, sActivationDn={:10s}'.format(
+                iLayer,
+                oaLayer[iLayer].iSize,
+                oaLayer[iLayer+1].iSize,
+                oaLayer[iLayer].sActivationUp,
+                oaLayer[iLayer].sActivationDn))
+             
+        # Train the object
+        oModel.TrainAutoencoder(raaTrain, oOptions)
+        
+    #     Log(sprintf('\n'))
+       
+    #     # Save the trained autoencoder
+    #     save(strcat(MnistAutoencoder.sModelPath,sName),'oModel')
+
+    #     # Compute training and test set errors
+    #     [rTrainRmse, rTrainError] = ComputeReconstructionError(oModel, raaTrain)
+    #     [rTestRmse,  rTestError]  = ComputeReconstructionError(oModel, raaTest)
+
+    #     # Report performance
+    #     Log(sprintf('rTrainRmse= #.4f, rTrainError= #.4f\n', rTrainRmse, rTrainError))
+    #     Log(sprintf('rTestRmse=  #.4f, rTestError=  #.4f\n', rTestRmse,  rTestError))
+    #     Log(sprintf('\n'))
+
+    #     # Summary string (used to assemble a table in word)
+    #     Log(sprintf('XX: #d,#d,#d,#4d #4d #4d #4d #4d,', iEpochs, bSample, bDropout, iaSize))
+    #     for iLayer=1:4
+    #         Log(sprintf('#0.4f,', oModel.oaLayer(iLayer).raError(end)))
+    #     end
+    #     Log(sprintf('#0.4f,#0.4f,', rTrainRmse, rTrainError))
+    #     Log(sprintf('#0.4f,#0.4f\n', rTestRmse,  rTestError))
+
+    #     # Close log file
+    #     fclose(oLog)
+         
+
     
+MnistAutoencoder.RunExperiments()
+
     # ## View
     # # Load the mnist test data and the specified model, autoencode the
     # # test data and display the resulting digits side by side for comparison.
