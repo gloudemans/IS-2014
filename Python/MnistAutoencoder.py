@@ -35,6 +35,9 @@ class MnistAutoencoder:
         # Load the mnist data
         df = pandas.read_pickle("../Datasets/MNIST/MNIST.pkl")
 
+        # Randomly permute the rows
+        df.reindex(numpy.random.permutation(df.index))
+
         raaTrain = numpy.array(df[df["subset"]==0].ix[:,0:784]/256.0)
         raaTest  = numpy.array(df[df["subset"]==1].ix[:,0:784]/256.0)
 
@@ -76,6 +79,9 @@ class MnistAutoencoder:
     
     def RbmExperiment(raaTrain, raaTest, iaSize, iEpochs, bSample, raDropV, raDropH):
 
+        # Open the log file
+        oLog = open('Log.txt', 'at')
+
         # Define classes used for RbmStack interfacing
         class Layer:
 
@@ -107,14 +113,14 @@ class MnistAutoencoder:
         def Log(sLine):
                             
             print('{:s}'.format(sLine))
-            # print(oLog,'#s', sLine)
-        
+            print('{:s}'.format(sLine), file=oLog)
+
         # Process a training event 
         def Report(iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse, rError):
-            
+
             # Construct event report string
-            Log('iLayer={:d}, iEpoch={:3d}, bSample={:d}, rDropV={:.2f}, rDropH={:.2f}, rRate={:.4f}, rMomentum={:.4f}, rRmse={:.4f}, rError={:.4f}\n'.format(
-                iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse, rError))   
+            Log('iLayer={:d}, iEpoch={:3d}, bSample={:d}, rDropV={:.2f}, rDropH={:.2f}, rRate={:.4f}, rMomentum={:.4f}, rRmse={:.4f}, rError={:.4f}'.format(
+                iLayer, iEpoch, int(bSample), rDropV, rDropH, rRate, rMomentum, rRmse, rError))   
 
         # Create momentum schedule
         raMomentum = 0.9*numpy.ones(iEpochs)
@@ -185,8 +191,7 @@ class MnistAutoencoder:
         # Construct the object
         oModel = RbmStack.RbmStack(oaLayer)
         
-        # Open the log file
-        oLog = open('Log.txt', 'at')
+
         
         # Infer dropout flag
         bDropout = max(raDropV+raDropH)>0
@@ -209,7 +214,7 @@ class MnistAutoencoder:
                 oaLayer[iLayer].sActivationDn))
              
         # Train the object
-        oModel.TrainAutoencoder(raaTrain, oOptions)
+        oModel.TrainAutoencoder(raaTrain[:10000,:], oOptions)
         
     #     Log(sprintf('\n'))
        
@@ -233,10 +238,8 @@ class MnistAutoencoder:
     #     Log(sprintf('#0.4f,#0.4f,', rTrainRmse, rTrainError))
     #     Log(sprintf('#0.4f,#0.4f\n', rTestRmse,  rTestError))
 
-    #     # Close log file
-    #     fclose(oLog)
-         
-
+        # Close log file
+        oLog.close()
     
 MnistAutoencoder.RunExperiments()
 

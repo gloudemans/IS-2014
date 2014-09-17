@@ -1,3 +1,4 @@
+import math
 import numpy
 import cudamat
 
@@ -306,7 +307,7 @@ class RbmStack:
                     iIndex = iIndex + self.iBatchSamples
                 
                 # Finish the rmse calculation
-                rRmse = numpy.sqrt(rTotalSe/_raaX.size)
+                rRmse = math.sqrt(rTotalSe/_raaX.size)
                 
                 # Record the error for this epoch
                 #self.oaLayer[iLayer].raRmse[iEpoch] = rRmse 
@@ -318,8 +319,7 @@ class RbmStack:
                 #self.oaLayer[iLayer].raError[iEpoch] = rError
 
                 # Report training progress
-                # oOptions.fEvent(iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse, rError)
-                print(rRmse)
+                oOptions.fEvent(iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse, rError)
             
             # Current layer outputs are the next layer inputs
             raaX = raaY
