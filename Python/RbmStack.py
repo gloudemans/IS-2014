@@ -339,6 +339,61 @@ class RbmStack:
     # * raaY - returns the output layer states
     # * baaY - returns the stochastic output states
     
+    # def UpdateStates(self, sType, raaW, raB, raaX, rDropout=0, bSample=False):
+       
+    #     baaY = [];
+
+    #     # Compute the scale factor to compensate for dropout so that
+    #     # average activations remain the same
+    #     rScale = 1/(1-rDropout)
+
+    #     print(raaX.shape)
+        
+    #     # Compute activations
+    #     iRows = raaX.shape[0]
+
+    #     raaA = numpy.dot(raaX*rScale, raaW)
+
+    #     for iRow in range(iRows):
+    #         raaA[iRow,:] = raaA[iRow,:] + raB
+            
+    #     # Depending on the activation type...
+    #     if (sType=="Logistic"):
+
+    #         # Compute the logistic def
+    #         raaY = 1./(1+numpy.exp(-raaA))
+
+    #     elif (sType=="Linear"):
+
+    #         # Compute output layer states
+    #         raaY = raaA
+
+    #     elif (sType=="HyperbolicTangent"):
+
+    #         # Compute output layer states
+    #         raaY = numpy.tanh(raaA)
+                                          
+    #     # If stochastic binary states are required...
+    #     if (bSample):
+
+    #         # Depending on the activation type...
+    #         if (sType=="Logistic"):
+
+    #             # Sample output layer states
+    #             baaY = raaY > numpy.random.random(raaY.shape)
+
+    #         elif (sType=="Linear"):
+
+    #             # Sample output layer states
+    #             baaY = raaY + numpy.random.standard_normal(raaY.shape)
+
+    #         elif (sType=="HyperbolicTangent"):
+
+    #             # Sample output layer states
+    #             baaY = raaY > 2*numpy.random.random(raaY.shape)-1
+
+    #     return(raaY, baaY)
+
     def UpdateStates(self, sType, raaW, raB, raaX, rDropout=0, bSample=False):
        
         baaY = [];
@@ -485,14 +540,16 @@ class RbmStack:
     #
     # * raaX - specifies and returns patterns, one pattern per row
     
-    def Autoencode(self, raaX):
+    def Autoencode(self, _raaX):
         
         # Maximum number of patterns to process at once
         iBatch = 1000
         
         # Measure the training data
-        iSamples = raaX.shape[0]
+        iSamples = _raaX.shape[0]
         
+        raaX = cudamat.CUDAMatrix(_raaX)
+
         # Clear the index
         iIndex = 0
         
@@ -500,30 +557,80 @@ class RbmStack:
         while(iIndex<iSamples):
 
             # Compute an indexer
-            ia = range(iIndex, min(iIndex+iBatch,iSamples))
+            # ia = range(iIndex, min(iIndex+iBatch,iSamples))
+
+            raaB = cudamat.empty((iBatch,raaX.shape[1]))
             
-            # Extract pattern batch
-            raaB = numpy.copy(raaX[ia,:])
+            # Get a batch of inputs in raaV0
+            raaX.get_row_slice(iIndex, iIndex+iBatch, target=raaB)
+
+            junk = [];
 
             # For each layer in the network...
             for iLayer in range(len(self.oaLayer)-1):
 
-                # Propagate states upward
-                (raaB, junk) = self.UpdateStates(self.oaLayer[iLayer].sActivationUp, self.oaLayer[iLayer].raaW, self.oaLayer[iLayer].raH, raaB)
+                # Clone layer weights on device
+                raaW = cudamat.CUDAMatrix(self.oaLayer[iLayer].raaW)
+                raV  = cudamat.CUDAMatrix(numpy.atleast_2d(self.oaLayer[iLayer].raV))
+                raH  = cudamat.CUDAMatrix(numpy.atleast_2d(self.oaLayer[iLayer].raH))
+
+                # Measure this layer
+                iVs = self.oaLayer[iLayer].raaW.shape[0]
+                iHs = self.oaLayer[iLayer].raaW.shape[1]
+
+                # Create an array to retain the layer output for 
+                # training the next layer
+                raaY = cudamat.empty((iBatch, iHs))                
+
+                # Get short references to layer parameters
+                sActivationUp = self.oaLayer[iLayer].sActivationUp
+                sActivationDn = self.oaLayer[iLayer].sActivationDn
+
+                raaA  = cudamat.empty((iBatch,iHs))
+
+                self._UpdateStates(sActivationUp, raaW, raH, raaB, raaA, raaY, junk)
+
+                raaB = raaY
 
             # For each layer in the network...
             for iLayer in range(len(self.oaLayer)-2, -1, -1):
 
+                # Clone layer weights on device
+                raaW = cudamat.CUDAMatrix(self.oaLayer[iLayer].raaW)
+                raV  = cudamat.CUDAMatrix(numpy.atleast_2d(self.oaLayer[iLayer].raV))
+                raH  = cudamat.CUDAMatrix(numpy.atleast_2d(self.oaLayer[iLayer].raH))
+
+                # Measure this layer
+                iVs = self.oaLayer[iLayer].raaW.shape[0]
+                iHs = self.oaLayer[iLayer].raaW.shape[1]
+
+                # Create an array to retain the layer output for 
+                # training the next layer
+                raaY = cudamat.empty((iBatch, iVs))
+
+                # Get short references to layer parameters
+                sActivationUp = self.oaLayer[iLayer].sActivationUp
+                sActivationDn = self.oaLayer[iLayer].sActivationDn
+
+                raaA  = cudamat.empty((iBatch,iVs))
+
+                self._UpdateStates(sActivationDn, raaW.T, raV, raaB, raaA, raaY, junk)
+
+                raaB = raaY
+
                 # Propagate states downward:
-                (raaB, junk) = self.UpdateStates(self.oaLayer[iLayer].sActivationDn, self.oaLayer[iLayer].raaW.T,self.oaLayer[iLayer].raV, raaB)
+                #(raaB, junk) = self.UpdateStates(self.oaLayer[iLayer].sActivationDn, self.oaLayer[iLayer].raaW.T,self.oaLayer[iLayer].raV, raaB)
             
             # Save reconstruction states
-            raaX[ia,:] = raaB
+            #raaX[ia,:] = raaB
+            raaX.set_row_slice(iIndex, iIndex+iBatch, raaB)
             
             # Advance to the next batch
-            iIndex = iIndex + len(ia)
+            iIndex = iIndex + iBatch
 
-        return(raaX)
+        _raaX = raaX.asarray()
+
+        return(_raaX)    
 
     ## ComputeReconstructionError
     # Autoencode the specified samples and compute error metrics 
@@ -566,7 +673,7 @@ class RbmStack:
             rTotalE = rTotalE + rE
 
             # Increment the index
-            iIndex = iIndex + leng(ia)
+            iIndex = iIndex + len(ia)
         
         # Average error over all samples
         rError = rTotalE/raaX.size
@@ -586,39 +693,40 @@ class RbmStack:
     # * rE - returns the sum of activation def specific errors for
     #   all elements
 
+
     def GetErrors(self, raaX, raaY, sActivation):
         
         # Small value to avoid log underflows
-        rEps = 1e-80         
+        rEps = 1e-20         
         
-        # Sum all squared errors
-        raaError = raaX.subtract(raaY)
-        raaError.mult(raaError)
+        if isinstance(raaX, cudamat.CUDAMatrix):
+            raaX = raaX.asarray()
 
-        #rSe = numpy.sum(numpy.multiply(raaError,raaError))
-        rSe = raaError.sum(axis=0).sum(axis=1).asarray()
+        if isinstance(raaY, cudamat.CUDAMatrix):
+            raaY = raaY.asarray()
+
+        # Compute errors
+        raaError = raaX - raaY;
+
+        # Sum all squared errors
+        rSe = numpy.sum(numpy.square(raaError))
 
         # Depending on the activation def type
         if(sActivation=="Logistic"):
 
             # Compute the average cross entropy error
-            #rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)) + numpy.multiply(1-raaX,numpy.log(1-raaY+rEps)))
-            pass
+            rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)) + numpy.multiply(1-raaX,numpy.log(1-raaY+rEps)))
 
         elif(sActivation=="Linear"):
 
             # Compute the squared error
-            #rE = rSe
-            pass
+            rE = rSe
 
         elif(sActivation=="Softmax"):
 
             # Compute the average cross entropy error
-            #rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)))
-            pass
-
-        rE = 0
-            
+            rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)))
+          
         return(rSe, rE)
     
     ## Unroll

@@ -190,9 +190,7 @@ class MnistAutoencoder:
         
         # Construct the object
         oModel = RbmStack.RbmStack(oaLayer)
-        
 
-        
         # Infer dropout flag
         bDropout = max(raDropV+raDropH)>0
         
@@ -214,7 +212,7 @@ class MnistAutoencoder:
                 oaLayer[iLayer].sActivationDn))
              
         # Train the object
-        oModel.TrainAutoencoder(raaTrain[:1000,:], oOptions)
+        oModel.TrainAutoencoder(raaTrain[:,:], oOptions)
         
         Log('')
        
@@ -222,8 +220,8 @@ class MnistAutoencoder:
     #     save(strcat(MnistAutoencoder.sModelPath,sName),'oModel')
 
         # Compute training and test set errors
-        (rTrainRmse, rTrainError) = oModel.ComputeReconstructionError(raaTrain[:1000,:])
-    #    (rTestRmse,  rTestError)  = oModel.ComputeReconstructionError(raaTest[:1000,:])
+        (rTrainRmse, rTrainError) = oModel.ComputeReconstructionError(raaTrain)
+        (rTestRmse,  rTestError)  = oModel.ComputeReconstructionError(raaTest)
 
     #     # Report performance
         Log('rTrainRmse= {:.4f}, rTrainError= {:.4f}'.format(rTrainRmse, rTrainError))
