@@ -1,6 +1,4 @@
 # To Do:
-# Fix problem with dropout training.
-# Eliinate the raaArray passed to update
 # Determine why code still causes a very large number of CUDA matrix initializations
 # Update code so that data rows don't need to be a multiple of batch size.
 # Determine why autoencoder RMSE performance is lower than matlab code.
@@ -92,13 +90,11 @@ class RbmStack:
         cudamat.CUDAMatrix.init_random(seed = 42)
 
         # Count the number of training samples
-        raaX = cudamat.CUDAMatrix(_raaX);
+        raaX = cudamat.CUDAMatrix(_raaX)
         iSamples = raaX.shape[0]
                   
         # For each layer pair...
         for iLayer in range(len(self.oaLayer)-1):
-
-            print('iLayer={0}'.format(iLayer))
 
             # Clone layer weights on device
             raaW = cudamat.CUDAMatrix(self.oaLayer[iLayer].raaW)
@@ -127,19 +123,7 @@ class RbmStack:
             sActivationUp = self.oaLayer[iLayer].sActivationUp
             sActivationDn = self.oaLayer[iLayer].sActivationDn
 
-           # raaHA  = cudamat.empty((self.iBatchSamples,iHs))
-            raaH1d = cudamat.empty((self.iBatchSamples,iHs))
-            raaH1s = cudamat.empty((self.iBatchSamples,iHs))
-            raaH3  = cudamat.empty((self.iBatchSamples,iHs))
-            baaH   = cudamat.empty((self.iBatchSamples,iHs))
-
-          #  raaVA  = cudamat.empty((self.iBatchSamples,iVs))
-            raaV0  = cudamat.empty((self.iBatchSamples,iVs))
-            raaV0.copy_to_host()
-            raaV2  = cudamat.empty((self.iBatchSamples,iVs))
-            baaV   = cudamat.empty((self.iBatchSamples,iVs))
-
-            junk = 0;
+            junk = None;
             
             # For each training epoch...
             for iEpoch in range(oOptions.iEpochs):
@@ -161,8 +145,21 @@ class RbmStack:
                 # While training samples remain...
                 while (iIndex<iSamples):
 
+                    # Number of samples to process in this batch
+                    iBatch = min(self.iBatchSamples, iSamples-iIndex)
+
+                    # Create working arrays on the device
+                    baaH   = cudamat.empty((iBatch,iHs))
+                    raaH1d = cudamat.empty((iBatch,iHs))
+                    raaH1s = cudamat.empty((iBatch,iHs))
+                    raaH3  = cudamat.empty((iBatch,iHs))
+
+                    baaV   = cudamat.empty((iBatch,iVs))
+                    raaV0  = cudamat.empty((iBatch,iVs))
+                    raaV2  = cudamat.empty((iBatch,iVs))
+
                     # Get a batch of inputs in raaV0
-                    raaX.get_row_slice(iIndex, iIndex+self.iBatchSamples, target=raaV0)
+                    raaX.get_row_slice(iIndex, iIndex+iBatch, target=raaV0)
                     
                     # If we need to drop visible units...
                     if (rDropV>0):
@@ -216,7 +213,7 @@ class RbmStack:
                         raaH3.mult(baaH)
 
                     # Scale factor to average this batch
-                    rScale = 1/self.iBatchSamples
+                    rScale = 1/iBatch
                     
                     # If normalizing the dropout gradient by the number
                     # of weight updates rather the number of batch
@@ -304,14 +301,16 @@ class RbmStack:
 
                     # Get a batch of inputs in raaV0
                     raaX.get_row_slice(iIndex, iIndex+self.iBatchSamples, target=raaV0)
-                    rSe, rE = self.GetErrors(raaV0, raaV2, sActivationDn)
+                    # rSe, rE = self.GetErrors(raaV0, raaV2, sActivationDn)
+                    rSe=0
+                    rE=0
                     
                     # Accumulate total errors
                     rTotalSe = rTotalSe+rSe
                     rTotalE  = rTotalE + rE
                     
                     # Advance to the next minibatch
-                    iIndex = iIndex + self.iBatchSamples
+                    iIndex = iIndex + iBatch
                 
                 # Finish the rmse calculation
                 rRmse = math.sqrt(rTotalSe/_raaX.size)
