@@ -220,7 +220,7 @@ class MnistAutoencoder:
     #     save(strcat(MnistAutoencoder.sModelPath,sName),'oModel')
 
         # Compute training and test set errors
-        (rTrainRmse, rTrainError) = oModel.ComputeReconstructionError(raaTrain)
+        (rTrainRmse, rTrainError) = oModel.ComputeReconstructionError(raaTrain[:,:])
         (rTestRmse,  rTestError)  = oModel.ComputeReconstructionError(raaTest)
 
     #     # Report performance
