@@ -162,7 +162,7 @@ class RbmStack:
                     raaX.get_row_slice(iIndex, iIndex+iBatch, target=raaV0)
                     
                     # If we need to drop visible units...
-                    if (rDropV>0):
+                    if(rDropV>0):
                     
                         # Compute a mask
                         baaV.fill_with_rand()
@@ -185,7 +185,7 @@ class RbmStack:
                         raaH1 = raaH1d
 
                     # If we need to drop hidden units...
-                    if (rDropH>0):
+                    if(rDropH>0):
                         
                         # Compute a mask
                         baaH.fill_with_rand()
@@ -194,10 +194,10 @@ class RbmStack:
 
                     # Advance the markov chain H1->V2
                     # raaV2, junk  = self._UpdateStates(sActivationDn, raaW.T, raV, raaH1, rDropH)
-                    self._UpdateStates(sActivationUp, raaW.T, raV, raaH1, raaV2, junk, rDropH)
+                    self._UpdateStates(sActivationDn, raaW.T, raV, raaH1, raaV2, junk, rDropH)
 
                     # If we need to drop visible units...
-                    if (rDropV>0):
+                    if(rDropV>0):
                         
                         # Clear dropped states
                         raaV2.mult(baaV)
@@ -207,7 +207,7 @@ class RbmStack:
                     self._UpdateStates(sActivationUp, raaW, raH, raaV2, raaH3, junk, rDropV)
 
                     # If we need to drop hidden units...
-                    if (rDropH>0):
+                    if(rDropH>0):
                         
                         # Clear dropped states
                         raaH3.mult(baaH)
@@ -271,58 +271,28 @@ class RbmStack:
                     #self.oaLayer[iLayer].raaW = self.oaLayer[iLayer].raaW + raaDelta
                     raaW.add(raaDelta)
                     
-                    # If the visible layer used dropout...
-                    if (rDropV):
-                        
-                        # Get a batch of inputs in raaV0
-                        raaX.get_row_slice(iIndex, iIndex+self.iBatchSamples, target=raaV0)
-
-                        # Recompute H1 with no dropout
-                        # raaH1d, raaH1s = self._UpdateStates(sActivationUp, raaW, raH, raaV0, 0)
-                        self._UpdateStates(sActivationUp, raaW, raH, raaV0, raaH1d, raaH1s, 0)
-                        raaY.set_row_slice(iIndex, iIndex+self.iBatchSamples, raaH1d)
-                        
-                        # Recompute V2 based on the new H1
-                        # raaV2, junk  = self._UpdateStates(sActivationDn, raaW.T, raV, raaH1, 0)
-                        self._UpdateStates(sActivationDn, raaW.T, raV, raaH1d, raaV2, junk, 0)
-                        
-                    else:
-                        
-                        # Use the prior computation
-                        raaY.set_row_slice(iIndex, iIndex+self.iBatchSamples, raaH1d)
-                        
-                        # If the hidden layer used dropout or sampling...
-                        if (rDropH or bSample):
-                            
-                            # Recompute V2
-                            self._UpdateStates(sActivationDn, raaW.T, raV, raaH1d, raaVA, raaV2, junk, 0)
-                    
-                    # Gather error statistics for this minibatch
-
                     # Get a batch of inputs in raaV0
                     raaX.get_row_slice(iIndex, iIndex+self.iBatchSamples, target=raaV0)
-                    # rSe, rE = self.GetErrors(raaV0, raaV2, sActivationDn)
-                    rSe=0
-                    rE=0
-                    
-                    # Accumulate total errors
-                    rTotalSe = rTotalSe+rSe
-                    rTotalE  = rTotalE + rE
                     
                     # Advance to the next minibatch
                     iIndex = iIndex + iBatch
+
+                #
+                raaXr = cudamat.empty((iSamples, iVs))
+
+                # raaV2, junk  = self._UpdateStates(sActivationDn, raaW.T, raV, raaH1, 0)
+                self._UpdateStates(sActivationUp, raaW, raH, raaX, raaY, junk, 0)
                 
+                # raaV2, junk  = self._UpdateStates(sActivationDn, raaW.T, raV, raaH1, 0)
+                self._UpdateStates(sActivationDn, raaW.T, raV, raaY, raaXr, junk, 0)
+
+                rTotalSe, rTotalE = self.GetErrors(raaX, raaXr, sActivationDn)
+                    
                 # Finish the rmse calculation
-                rRmse = math.sqrt(rTotalSe/_raaX.size)
-                
-                # Record the error for this epoch
-                #self.oaLayer[iLayer].raRmse[iEpoch] = rRmse 
+                rRmse = math.sqrt(rTotalSe/(raaX.shape[0]*raaX.shape[1]))
                 
                 # Finish rmse calculation
-                rError = rTotalE/_raaX.size
-                
-                # Record the error for this epoch
-                #self.oaLayer[iLayer].raError[iEpoch] = rError
+                rError = rTotalE/(raaX.shape[0]*raaX.shape[1])
 
                 # Report training progress
                 oOptions.fEvent(iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse, rError)
@@ -522,7 +492,7 @@ class RbmStack:
 
                 # Sample output layer states
         #        baaY = raaY + numpy.random.standard_normal(raaY.shape)
-                _baaY.fill_with_rand()
+                _baaY.fill_with_randn()
                 _baaY.add(_raaY)
 
             elif (sType=="HyperbolicTangent"):
@@ -651,42 +621,61 @@ class RbmStack:
     def ComputeReconstructionError(self, raaX):
         
         # Process small batches to conserve memory
-        iBatch = 1000
+        iBatch = 20000
         
         # Autoencode the specified samples to form reconstructions
+        print('Autoencode')
         raaY = self.Autoencode(raaX)
         
+        print('XY')
+        raaX = cudamat.CUDAMatrix(raaX)
+        raaY = cudamat.CUDAMatrix(raaY)
+
         # Measure the data
         iSamples = raaX.shape[0]
-        
-        # Clear the index
-        iIndex = 0
-        
-        # Clear the error accumulators
-        rTotalE  = 0
-        rTotalSe = 0
-        
-        # While training samples remain...
-        while(iIndex<iSamples):
-            
-            # Compute an indexer
-            ia = range(iIndex, min(iIndex+iBatch,iSamples))
-            
-            # Get errors for this batch
-            (rSe, rE) = self.GetErrors(raaX[ia,:], raaY[ia,:], self.oaLayer[0].sActivationDn)
-            
-            # Accumulate the error totals
-            rTotalSe = rTotalSe+rSe
-            rTotalE = rTotalE + rE
 
-            # Increment the index
-            iIndex = iIndex + len(ia)
+        print('GetErrors')
+        rTotalSe, rTotalE = self.GetErrors(raaX, raaY, self.oaLayer[0].sActivationDn)
+            
+        # Finish the rmse calculation
+        rRmse = math.sqrt(rTotalSe/(raaX.shape[0]*raaX.shape[1]))
         
-        # Average error over all samples
-        rError = rTotalE/raaX.size
+        # Finish rmse calculation
+        rError = rTotalE/(raaX.shape[0]*raaX.shape[1])
         
-        # Root mean square error over all samples
-        rRmse  = math.sqrt(rTotalSe/raaX.size)
+        # # Clear the index
+        # iIndex = 0
+        
+        # # Clear the error accumulators
+        # rTotalE  = 0
+        # rTotalSe = 0
+        
+        # # While training samples remain...
+        # while(iIndex<iSamples):
+            
+        #     # Compute an indexer
+        #     ia = range(iIndex, min(iIndex+iBatch,iSamples))
+
+        #     raaXs = raaX.get_row_slice(iIndex, min(iIndex+iBatch,iSamples))
+        #     raaYs = raaY.get_row_slice(iIndex, min(iIndex+iBatch,iSamples))
+            
+        #     # Get errors for this batch
+        #     (rSe, rE) = self.GetErrors(raaXs, raaYs, self.oaLayer[0].sActivationDn)
+            
+        #     # Accumulate the error totals
+        #     rTotalSe = rTotalSe + rSe
+        #     rTotalE = rTotalE + rE
+
+        #     # Increment the index
+        #     iIndex = iIndex + len(ia)
+
+        # (rSe, rE) = self.GetErrors(raaXs, raaYs, self.oaLayer[0].sActivationDn)
+        
+        # # Average error over all samples
+        # rError = rTotalE/raaX.size
+        
+        # # Root mean square error over all samples
+        # rRmse  = math.sqrt(rTotalSe/raaX.size)
         
         return(rRmse, rError)
     
@@ -706,33 +695,34 @@ class RbmStack:
         # Small value to avoid log underflows
         rEps = 1e-20         
         
-        if isinstance(raaX, cudamat.CUDAMatrix):
-            raaX = raaX.asarray()
+        raaError = cudamat.empty(raaX.shape)
+        raaX.subtract(raaY, raaError)
+        raaError.mult(raaError)
+        raError = raaError.sum(axis=0)
+        rError = raError.sum(axis=1)
+        rSe = rError.asarray()[0,0]
+        #print(rSe)
 
-        if isinstance(raaY, cudamat.CUDAMatrix):
-            raaY = raaY.asarray()
+        # # Sum all squared errors
+        # rSe = numpy.sum(numpy.square(raaError))
 
-        # Compute errors
-        raaError = raaX - raaY;
+        # # Depending on the activation def type
+        # if(sActivation=="Logistic"):
 
-        # Sum all squared errors
-        rSe = numpy.sum(numpy.square(raaError))
+        #     # Compute the average cross entropy error
+        #     rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)) + numpy.multiply(1-raaX,numpy.log(1-raaY+rEps)))
 
-        # Depending on the activation def type
-        if(sActivation=="Logistic"):
+        # elif(sActivation=="Linear"):
 
-            # Compute the average cross entropy error
-            rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)) + numpy.multiply(1-raaX,numpy.log(1-raaY+rEps)))
+        #     # Compute the squared error
+        #     rE = rSe
 
-        elif(sActivation=="Linear"):
+        # elif(sActivation=="Softmax"):
 
-            # Compute the squared error
-            rE = rSe
+        #     # Compute the average cross entropy error
+        #     rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)))
 
-        elif(sActivation=="Softmax"):
-
-            # Compute the average cross entropy error
-            rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)))
+        rE = 0
           
         return(rSe, rE)
     

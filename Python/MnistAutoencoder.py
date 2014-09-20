@@ -173,8 +173,8 @@ class MnistAutoencoder:
                 Layer(iaSize[0]),
                 Layer(iaSize[1]),
                 Layer(iaSize[2]),
-                Layer(iaSize[3]),                
-                Layer(iaSize[4], 'Linear','Logistic')
+                Layer(iaSize[3],'Linear','Logistic'),
+                Layer(iaSize[4])
             ]
 
         oOptions = Options(
