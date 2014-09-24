@@ -32,14 +32,18 @@ class MnistAutoencoder:
             # Launch experiment
             MnistAutoencoder.RbmExperiment(raaTrain, raaTest, iaSize, iEpochs, bSample, raDropV*bDropout, raDropH*bDropout)
         
+        print('Load Starting...')
+
         # Load the mnist data
         df = pandas.read_pickle("../Datasets/MNIST/MNIST.pkl")
 
         # Randomly permute the rows
         df.reindex(numpy.random.permutation(df.index))
 
-        raaTrain = numpy.array(df[df["subset"]==0].ix[:,0:784]/256.0)
-        raaTest  = numpy.array(df[df["subset"]==1].ix[:,0:784]/256.0)
+        raaTrain = numpy.array(df[df["subset"]==0].ix[:,0:784])/256.0
+        raaTest  = numpy.array(df[df["subset"]==1].ix[:,0:784])/256.0
+
+        print('Load Complete...')
 
         # Measure the training data
         [iSamples, iFeatures] = raaTrain.shape
@@ -112,14 +116,14 @@ class MnistAutoencoder:
         # Log a line of output to both the console and the log file
         def Log(sLine):
                             
-            print('{:s}'.format(sLine))
-            print('{:s}'.format(sLine), file=oLog)
+            print('{:s}'.format(sLine),end="")
+            print('{:s}'.format(sLine),end="", file=oLog)
 
         # Process a training event 
         def Report(iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse, rError):
 
             # Construct event report string
-            Log('iLayer={:d}, iEpoch={:3d}, bSample={:d}, rDropV={:.2f}, rDropH={:.2f}, rRate={:.4f}, rMomentum={:.4f}, rRmse={:.4f}, rError={:.4f}'.format(
+            Log('iLayer={:d}, iEpoch={:3d}, bSample={:d}, rDropV={:.2f}, rDropH={:.2f}, rRate={:.4f}, rMomentum={:.4f}, rRmse={:.4f}, rError={:.4f}\n'.format(
                 iLayer, iEpoch, int(bSample), rDropV, rDropH, rRate, rMomentum, rRmse, rError))   
 
         # Create momentum schedule
@@ -195,16 +199,16 @@ class MnistAutoencoder:
         bDropout = max(raDropV+raDropH)>0
         
         # Build a filename for the model
-        sName = 'iEpochs={:d} bSample={:d} bDropout={:d} ({:d} {:d} {:d} {:d} {:d})'.format(iEpochs, bSample, bDropout, iaSize[0], iaSize[1], iaSize[2], iaSize[3], iaSize[4])
+        sName = 'iEpochs={:d} bSample={:d} bDropout={:d} ({:d} {:d} {:d} {:d} {:d})\n'.format(iEpochs, bSample, bDropout, iaSize[0], iaSize[1], iaSize[2], iaSize[3], iaSize[4])
         Log(sName)
         
         # Get clock time as a string
         sNow = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        Log(sNow)
+        Log('{0}\n'.format(sNow))
 
         # Summarize the machine geometry
         for iLayer in range(0,len(oaLayer)-1):
-            Log('iLayer={:d}, iSizeV={:5d}, iSizeH={:5d}, sActivationUp={:10s}, sActivationDn={:10s}'.format(
+            Log('iLayer={:d}, iSizeV={:5d}, iSizeH={:5d}, sActivationUp={:10s}, sActivationDn={:10s}\n'.format(
                 iLayer,
                 oaLayer[iLayer].iSize,
                 oaLayer[iLayer+1].iSize,
@@ -214,7 +218,7 @@ class MnistAutoencoder:
         # Train the object
         oModel.TrainAutoencoder(raaTrain[:,:], oOptions)
         
-        Log('')
+        Log('\n'.format())
        
     #     # Save the trained autoencoder
     #     save(strcat(MnistAutoencoder.sModelPath,sName),'oModel')
@@ -224,16 +228,16 @@ class MnistAutoencoder:
         (rTestRmse,  rTestError)  = oModel.ComputeReconstructionError(raaTest)
 
     #     # Report performance
-        Log('rTrainRmse= {:.4f}, rTrainError= {:.4f}'.format(rTrainRmse, rTrainError))
-        Log('rTestRmse=  {:.4f}, rTestError=  {:.4f}'.format(rTestRmse,  rTestError))
+        Log('rTrainRmse= {:.4f}, rTrainError= {:.4f}\n'.format(rTrainRmse, rTrainError))
+        Log('rTestRmse=  {:.4f}, rTestError=  {:.4f}\n'.format(rTestRmse,  rTestError))
         Log('')
 
         # Summary string (used to assemble a table in word)
-        Log('XX: {:d},{:d},{:d},{:4d} {:4d} {:4d} {:4d} {:4d}'.format(iEpochs, bSample, bDropout, iaSize[0], iaSize[1], iaSize[2], iaSize[3], iaSize[4]))
+        Log('XX: {:d},{:d},{:d},{:4d} {:4d} {:4d} {:4d} {:4d},'.format(iEpochs, bSample, bDropout, iaSize[0], iaSize[1], iaSize[2], iaSize[3], iaSize[4]))
         # for iLayer in range(4)
         #     Log(sprintf('{:0.4f,}', oModel.oaLayer[iLayer].raError[end]))
 
-        Log('{:0.4f},{:0.4f},{:0.4f},{:0.4f}'.format(rTrainRmse, rTrainError,rTestRmse,  rTestError))
+        Log('{:0.4f},{:0.4f},{:0.4f},{:0.4f}\n'.format(rTrainRmse, rTrainError,rTestRmse,  rTestError))
 
         # Close log file
         oLog.close()

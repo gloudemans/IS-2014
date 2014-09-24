@@ -271,9 +271,6 @@ class RbmStack:
                     #self.oaLayer[iLayer].raaW = self.oaLayer[iLayer].raaW + raaDelta
                     raaW.add(raaDelta)
                     
-                    # Get a batch of inputs in raaV0
-                    raaX.get_row_slice(iIndex, iIndex+self.iBatchSamples, target=raaV0)
-                    
                     # Advance to the next minibatch
                     iIndex = iIndex + iBatch
 
@@ -447,7 +444,7 @@ class RbmStack:
         #_raaW = cudamat.CUDAMatrix(raaW)
 
         #_raaB = cudamat.CUDAMatrix(numpy.atleast_2d(raB))
-        _raaX.dot(_raaW,_raaY)
+        cudamat.dot(_raaX, _raaW, target=_raaY)
         _raaY = _raaY.mult(rScale)
         _raaY.add_row_vec(_raaB)
 
