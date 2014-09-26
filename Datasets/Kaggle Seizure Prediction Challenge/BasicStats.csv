@@ -1,0 +1,9 @@
+Dir,Interictal Files,Preictal Files,Test Files,Electrodes,Samples,Length (S),Frequency (Hz),File Bytes(MB),Dir Bytes(GB),Consistent
+Dog_1,480,24,502,16,239766,600,399.61,7.67,7.72,True
+Dog_2,500,42,1000,16,239766,600,399.61,7.67,11.8,True
+Dog_3,1440,72,907,16,239766,600,399.61,7.67,18.6,True
+Dog_4,804,97,990,16,239766,600,399.61,7.67,14.5,True
+Dog_5,450,30,191,15,239766,600,399.61,7.2,4.83,True
+Patient_1,50,18,195,15,3000000,600,5000.00,95.8,25.2,True
+Patient_2,42,18,150,24,3000000,600,5000.00,147,31,True
+TotalInterictal=3766, TotalPreictal= 301, TotalTest=3935, Total= 8002, DataBytes=114 (GB)
