@@ -33,6 +33,11 @@ class DataProxy:
 		# Default state
 		self.SetValidationSet(rValidationFraction)
 
+	## 
+	# Load the .mat file specified by sFile and return the
+	# data array, the number of electrodes, the number of samples,
+	# the length, and the sampling frequency as a tuple.
+
 	def LoadMat(self, sFile):
 
 		# Load one file
@@ -50,7 +55,9 @@ class DataProxy:
 		return((raaData, iElectrodes, iSamples, rLength, rFrequency))
 
 	## SegmentClass
-	# Return class given the mat filename.
+	# Return class given the specified mat filename.
+	# The returned class is an integer 1 for preictal, 0 for interictal and
+	# -1 for test.
 	#
 	# * sFile - specifies the filename
 
@@ -148,7 +155,7 @@ class DataProxy:
 			self.iaTrain[iSegment] = self.ClassOf(sFile)
 			print(self.iaTrain[iSegment])
 
-	def GetTestSample(self, bRestart=False):
+	def GetTestSamples(self, bRestart=False):
 
 		if(bRestart):
 
