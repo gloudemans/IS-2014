@@ -226,4 +226,4 @@ class SeizurePredictionData:
 		cls.MakeAllBatches(sDataset, 'Layer_0', iBatches, iBatchSamples, iSamples)
 
 
-SeizurePredictionData.Bulk2()
+SeizurePredictionData.Bulk()
