@@ -131,7 +131,7 @@ class SeizurePredictionData:
 			cls.PreprocessMatFiles(os.path.join(sSrc, s), os.path.join(sDst, s), bDetrend, rSampleFrequency)
 
 	@classmethod
-	def MakeBatches(cls, sSrc, sDst, iBatches, iBatchSamples, iSubsamples):
+	def MakeBatches(cls, sSrc, sDst, iBatches, iTrainingSamples, iValidationSamples, iSubsamples):
 
 		# If the dource directory doesn't exist...
 		if not os.path.exists(sDst):
@@ -142,10 +142,20 @@ class SeizurePredictionData:
 		# Get all training pkl filenames
 		lFiles = [f for f in os.listdir(sSrc) if(f.endswith('.pkl') and (not cls.ClassFromName(f)=='Test'))]
 
+		# Shuffle them up
+		random.shuffle(lFiles)
+
+		# 
+		rValidation = iValidationSamples/(iTrainingSamples+iValidationSamples)
+
+		# Compute the number of validation and training files
+		iValidationFiles = round(rValidation*len(lFiles))
+		iTrainingFiles   = len(lFiles)-iValidationFiles
+
 		# Report status
 		print('Loading {} ...'.format(sSrc))
 
-		# For every training file...
+		# For every file...
 		for iFile in range(len(lFiles)):
 
 			# Get file name
@@ -161,7 +171,8 @@ class SeizurePredictionData:
 				iRows = raaData.shape[0]
 				iCols = raaData.shape[1]
 				raaaData = numpy.empty((len(lFiles), iRows, iCols))
-				iaClass  = numpy.empty((len(lFiles)))
+				iaClass  = numpy.empty((len(lFiles)))				
+				baTra  = numpy.empty((len(lFiles)))
 
 			# Store the data
 			raaaData[iFile,:,:] = raaData
@@ -173,29 +184,45 @@ class SeizurePredictionData:
 
 		for iBatch in range(iBatches):
 
-			raaSample = numpy.empty((iBatchSamples, iSubsamples*iCols), dtype=numpy.float32)
-			iaSample = numpy.empty((iBatchSamples), dtype = numpy.int)
+			raaTraining   = numpy.empty((iTrainingSamples, iSubsamples*iCols), dtype=numpy.float32)
+			iaTraining    = numpy.empty((iTrainingSamples), dtype = numpy.int)			
+
+			raaValidation = numpy.empty((iValidationSamples, iSubsamples*iCols), dtype=numpy.float32)
+			iaValidation  = numpy.empty((iValidationSamples), dtype = numpy.int)
 
 			sBatch =  os.path.join(sDst, 'Batch_{:04d}.pkl'.format(iBatch))
 
-			for iBatchSample in range(iBatchSamples):
+			print('sFile={:s}'.format(os.path.basename(sBatch)))
 
-				iFile   = random.randrange(len(lFiles))
+			for iSample in range(iTrainingSamples):
+
+				iFile   = random.randrange(iTrainingFiles)
 				iOffset = random.randrange(iRows-iSubsamples)
 
-				raaSample[iBatchSample,:] = raaaData[iFile,iOffset:iOffset+iSubsamples,:].flatten()
-				iaSample[iBatchSample] = iaClass[iFile]
+				raaTraining[iSample,:] = raaaData[iFile,iOffset:iOffset+iSubsamples,:].flatten()
+				iaTraining[iSample] = iaClass[iFile]
 
-				if(not (iBatchSample%10000) ):
-					print('sFile={:s}, iBatchSample={:6d}'.format(os.path.basename(sBatch), iBatchSample))
+				if(not (iSample%10000) ):
+					print('iTrainingSample=  {:6d}'.format(iSample))
+
+			for iSample in range(iValidationSamples):
+
+				iFile   = random.randrange(iValidationFiles)+iTrainingFiles
+				iOffset = random.randrange(iRows-iSubsamples)
+
+				raaValidation[iSample,:] = raaaData[iFile,iOffset:iOffset+iSubsamples,:].flatten()
+				iaValidation[iSample] = iaClass[iFile]
+
+				if(not (iSample%10000) ):
+					print('iValidationSample={:6d}'.format(iSample))
+
+			print()
 
 			# Pickle the batch
-			print(iaSample[:20])
-			pickle.dump((raaSample, iaSample), open(sBatch,'wb'))
-
+			pickle.dump((raaTraining, iaTraining, raaValidation, iaValidation), open(sBatch,'wb'))
 
 	@classmethod
-	def MakeAllBatches(cls, sSrc, sDst, iBatches, iBatchSamples, iSamples):
+	def MakeAllBatches(cls, sSrc, sDst, iBatches, iTrainingSamples, iValidationSamples, iSamples):
 
 		# Get subdirectories of the specified source directory
 		lSubs = [f for f in os.listdir(sSrc) if os.path.isdir(os.path.join(sSrc, f))]
@@ -204,7 +231,7 @@ class SeizurePredictionData:
 		for s in lSubs:
 
 			# Preprocess the matfiles
-			cls.MakeBatches(os.path.join(sSrc, s), os.path.join(sSrc, s, sDst), iBatches, iBatchSamples, iSamples)
+			cls.MakeBatches(os.path.join(sSrc, s), os.path.join(sSrc, s, sDst), iBatches, iTrainingSamples, iValidationSamples, iSamples)
 
 	@classmethod
 	def Bulk(cls):
@@ -212,18 +239,19 @@ class SeizurePredictionData:
 		bDetrend = True
 		sDataset = 'C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\'
 
-		cls.PreprocessDataset(os.path.join(sDataset,'Raw'), os.path.join(sDataset, '20Hz'), True,  20.0)
-		cls.PreprocessDataset(os.path.join(sDataset,'Raw'), os.path.join(sDataset,'400Hz'), True, 400.0)
+		cls.PreprocessDataset(os.path.join(sDataset,'Raw'), os.path.join(sDataset, '20Hz'), bDetrend,  20.0)
+		cls.PreprocessDataset(os.path.join(sDataset,'Raw'), os.path.join(sDataset,'400Hz'), bDetrend, 400.0)
 
 	@classmethod
 	def Bulk2(cls):
 
-		iBatches = 100
+		iBatches = 20
 		iSamples = 16;
-		iBatchSamples = 100000
-		sDataset = 'C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\20Hz'
+		iTrainingSamples   = 80000
+		iValidationSamples = 20000
+		sDataset = 'C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge'
 
-		cls.MakeAllBatches(sDataset, 'Layer_0', iBatches, iBatchSamples, iSamples)
+		cls.MakeAllBatches(os.path.join(sDataset, '20Hz'), 'Layer_0', iBatches, iTrainingSamples, iValidationSamples, iSamples)
+		cls.MakeAllBatches(os.path.join(sDataset,'400Hz'), 'Layer_0', iBatches, iTrainingSamples, iValidationSamples, iSamples)
 
-
-SeizurePredictionData.Bulk()
+SeizurePredictionData.Bulk2()
