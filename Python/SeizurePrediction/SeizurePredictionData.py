@@ -234,24 +234,28 @@ class SeizurePredictionData:
 			cls.MakeBatches(os.path.join(sSrc, s), os.path.join(sSrc, s, sDst), iBatches, iTrainingSamples, iValidationSamples, iSamples)
 
 	@classmethod
-	def Bulk(cls):
+	def PreprocessDatasetTwoWays(cls, sDataset):
 
 		bDetrend = True
-		sDataset = 'C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\'
 
 		cls.PreprocessDataset(os.path.join(sDataset,'Raw'), os.path.join(sDataset, '20Hz'), bDetrend,  20.0)
 		cls.PreprocessDataset(os.path.join(sDataset,'Raw'), os.path.join(sDataset,'400Hz'), bDetrend, 400.0)
 
 	@classmethod
-	def Bulk2(cls):
+	def MakeAllBatchesTwoWays(cls, sDataset):
 
 		iBatches = 20
 		iSamples = 16;
 		iTrainingSamples   = 80000
 		iValidationSamples = 20000
-		sDataset = 'C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge'
+		
 
-		cls.MakeAllBatches(os.path.join(sDataset, '20Hz'), 'Layer_0', iBatches, iTrainingSamples, iValidationSamples, iSamples)
-		cls.MakeAllBatches(os.path.join(sDataset,'400Hz'), 'Layer_0', iBatches, iTrainingSamples, iValidationSamples, iSamples)
+		cls.MakeAllBatches(os.path.join(sDataset, '20Hz'), 'Batch_16', iBatches, iTrainingSamples, iValidationSamples, iSamples)
+		cls.MakeAllBatches(os.path.join(sDataset,'400Hz'), 'Batch_16', iBatches, iTrainingSamples, iValidationSamples, iSamples)
 
-SeizurePredictionData.Bulk2()
+# Create the 20Hz and 400Hz subsampled subsets
+sDataset = 'C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge'
+SeizurePredictionData.PreprocessDatasetTwoWays(sDataset)
+
+# Form batches of 16 samples for both 20H and 400Hz subsets
+SeizurePredictionData.MakeAllBatchesTwoWays(sDataset)
