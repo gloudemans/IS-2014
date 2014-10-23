@@ -7,7 +7,7 @@ def Log(iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse, rError
     print('iLayer={}, iEpoch={}, bSample={}, rDropV={}, rDropH={}, rRate={}, rMomentum={}, rRmse={}, rError={}'.format(iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse, rError))
 
 # Define a function to exercise the class (crudely!)
-def Tester():
+def Tester(sFile, iSize):
 
     import pickle
 
@@ -44,17 +44,16 @@ def Tester():
             self.fEvent = Log
 
     # Specify epochs
-    iEpochs = 10
+    iEpochs = 50
 
-
-    (raaTrain, iaTrain, raaTest, iaTest) = pickle.load( open( "Batch_0001.pkl", "rb" ) )
+    
+    (raaTrain, iaTrain, raaTest, iaTest) = pickle.load( open( sFile, "rb" ) )
     print(raaTrain.shape)
 
     raaX = raaTrain
 
-
     # Create 784 x 1000 rbm layer
-    oaLayers = [Layer(raaX.shape[1],iEpochs),Layer(1000,iEpochs),Layer(20,iEpochs)]
+    oaLayers = [Layer(raaX.shape[1],iEpochs),Layer(1000,iEpochs), Layer(iSize,iEpochs)]
 
     # Create training options
     oOptions = Options(iEpochs)
@@ -70,9 +69,20 @@ def Tester():
     (rTestRmse,  rTestError)  = oRbmStack.ComputeReconstructionError(raaTest)
 
     #     # Report performance
-    print('rTrainRmse= {:.4f}, rTrainError= {:.4f}\n'.format(rTrainRmse, rTrainError))
-    print('rTestRmse=  {:.4f}, rTestError=  {:.4f}\n'.format(rTestRmse,  rTestError))
+    oFile = open('Log.txt','at')
+    print('sFile={}, iSize={:d}'.format(sFile,iSize),file=oFile)
+    print('rTrainRmse= {:.4f}, rTrainError= {:.4f}'.format(rTrainRmse, rTrainError),file=oFile)
+    print('rTestRmse=  {:.4f}, rTestError=  {:.4f}'.format(rTestRmse,  rTestError),file=oFile)
+    oFile.close()
 
-Tester()
+sFile = "Batch_0000.pkl" 
+Tester(sFile,10)
+Tester(sFile,20)
+Tester(sFile,50)
+Tester(sFile,100)
+Tester(sFile,200)
+Tester(sFile,500)
+Tester(sFile,1000)
+Tester(sFile,2000)
 
 
