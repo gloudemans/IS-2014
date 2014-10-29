@@ -3,9 +3,6 @@ import numpy
 
 ## SequenceDecimatingNetwork
 # This class implements a sequence decimating network.
-#  It provides methods to
-# read and write the network weights as a vector and to compute the gradient
-# of error with respect to network weights.
 #
 # * SequenceDecimatingNetwork
 # * ComputeOutputs
@@ -15,6 +12,7 @@ import numpy
 # * Train
 
 class SequenceDecimatingNetwork:
+	rEps = 1e-10
 
 	## Layer
 	# This contains the parameters that descibe a network layer.
@@ -72,15 +70,12 @@ class SequenceDecimatingNetwork:
 		# Need an extra state for the network output
 		self.oaStates.append( SequenceDecimatingNetwork.State())
 
-	def ComputeOutputs(self, raaaP, bComputeDerivatives=False):
+	def ComputeOutputs(self, raaaX, bComputeDerivatives=False):
 
-		#print(self.GetWeightVector())
+		(iPatterns, iSamples, iFeatures) = raaaX.shape 
 
-		# Measure the input array
-		(iPatterns, iSamples, iFeatures) = raaaP.shape
-
-		# Reinterpret shape to allow efficient matrix computations
-		self.oaStates[0].raaX = numpy.reshape(numpy.copy(raaaP), (iPatterns*iSamples, iFeatures))
+		# Save input states
+		self.oaStates[0].raaX = numpy.reshape(numpy.copy(raaaX),(iPatterns*iSamples,iFeatures))
 
 		# For each layer...
 		for iLayer in range(self.iLayers):
@@ -106,8 +101,6 @@ class SequenceDecimatingNetwork:
 			# Compute logistic(x) activation
 			self.oaStates[iLayer+1].raaX = 1./(1+numpy.exp(-self.oaStates[iLayer+1].raaX))
 
-			print(numpy.sum(self.oaStates[iLayer+1].raaX))
-
 			# If this derivative is needed for backpropagation
 			if(bComputeDerivatives and (iLayer<self.iLayers-1)):
 
@@ -116,9 +109,14 @@ class SequenceDecimatingNetwork:
 
 		return(self.oaStates[self.iLayers].raaX)
 
-	def ComputeGradient(self, raaaP, raaT):
+	def ComputeGradient(self, raaX, raaT):
 
-		raaY = self.ComputeOutputs(raaaP, bComputeDerivatives=True)
+		raaY = self.ComputeOutputs(raaX, bComputeDerivatives=True)
+
+		raY = raaY.flatten()
+		raT = raaT.flatten()
+		rError = -numpy.mean(raT*numpy.log(raY+self.rEps) + (1-raT)*numpy.log(1-raY+self.rEps))
+		rRmse  = numpy.sqrt(numpy.mean((raT-raY)**2))
 
 		# Compute output layer error
 		raaE = raaY - raaT
@@ -130,10 +128,10 @@ class SequenceDecimatingNetwork:
 			(iSamples, iFeatures) = self.oaStates[iLayer].raaX.shape
 
 			# Compute the gradient of error with respect to weight
-			self.oaStates[iLayer].raaWg = numpy.dot(self.oaStates[iLayer].raaX.T, raaE)/iSamples
+			self.oaStates[iLayer].raaWg = numpy.dot(self.oaStates[iLayer].raaX.T, raaE)
 
 			# Compute gradient of error with respect to bias
-			self.oaStates[iLayer].raBg = numpy.mean(raaE,0)
+			self.oaStates[iLayer].raBg = numpy.sum(raaE,0)
 
 			# If error is needed for next layer...
 			if(iLayer>0):
@@ -152,15 +150,15 @@ class SequenceDecimatingNetwork:
 
 		raG = self.GetGradientVector()
 
-		return(raG)
+		return((raG, rError, rRmse))
 
-	def ComputeGradientNumerical(self, raaaP, raaT, rDelta=1e-6):
+	def ComputeGradientNumerical(self, raaX, raaT, rDelta=1e-6):
 
 		rEps = 1e-10
 
-		raY = self.ComputeOutputs(raaaP).flatten()
+		raY = self.ComputeOutputs(raaX).flatten()
 		raT = raaT.flatten()
-		rError = -numpy.mean(raT*numpy.log(raY+rEps) + (1-raT)*numpy.log(1-raY+rEps))
+		rError = -numpy.sum(raT*numpy.log(raY+rEps) + (1-raT)*numpy.log(1-raY+rEps))
 
 		raW = self.GetWeightVector()
 		raG = numpy.zeros(raW.shape)
@@ -171,13 +169,13 @@ class SequenceDecimatingNetwork:
 			raWd[k] += rDelta
 			self.SetWeightVector(raWd)
 			raWd[k] = raW[k]
-			raY0 = self.ComputeOutputs(raaaP).flatten()
-			rError0 = -numpy.mean(raT*numpy.log(raY0+rEps) + (1-raT)*numpy.log(1-raY0+rEps))
+			raY0 = self.ComputeOutputs(raaX).flatten()
+			rError0 = -numpy.sum(raT*numpy.log(raY0+rEps) + (1-raT)*numpy.log(1-raY0+rEps))
 			raG[k] = (rError0-rError)/rDelta
 
 		self.SetWeightVector(raW)
 
-		self.ComputeOutputs(raaaP, True)
+		self.ComputeOutputs(raaX, True)
 
 		return(raG)
 
@@ -211,30 +209,84 @@ class SequenceDecimatingNetwork:
 			self.oaLayers[iLayer].raB  = numpy.reshape(raW[iBase:iBase+self.oaLayers[iLayer].raB.size], self.oaLayers[iLayer].raB.shape)
 			iBase += self.oaLayers[iLayer].raB.size
 
-def Test():
+	def Train(self, raaaX, raaT, iSamples, rRate, rMomentum):
 
-	# Create network designed to 1000 patterns containing 100 samples with 15 features each.
-	# The first layer decimates by 5 resulting in 75 input features and generates 100 output features
-	# The second layer decimates by 20 resulting in 2000 input features and 1 output feature
+		iSample = 0
+		iBatch  = 100
+		i0 = 0
+		raW = self.GetWeightVector()
 
-	# raaX = numpy.random.randn(2000,100,15)
-	# raaT = numpy.random.randn(2000,2)
-	# oL0 = SequenceDecimatingNetwork.Layer(5,  numpy.random.randn(75,100), numpy.random.randn(100))
-	# oL1 = SequenceDecimatingNetwork.Layer(20, numpy.random.randn(2000,2), numpy.random.randn(2))
+		while(iSample<iSamples):
 
-	raaX = numpy.random.randn(5,6,3)*.1
-	raaT = numpy.random.randn(5,2)*.1
+			i1 = min(i0 + min(iBatch,iSamples-iSample), raaaX.shape[0])
+			raaXs = raaaX[i0:i1,:,:]
+			raaTs = raaT[i0:i1,:]
+			iSample += i1-i0
+			i0 = i1;
+
+			(raG, rError, rRmse) = self.ComputeGradient(raaXs, raaTs)
+
+			print("rError={:8.4f}, rRmse={:.6f}".format(rError,rRmse))
+
+			raW -= rRate*raG
+			self.SetWeightVector(raW)
+
+			if(i0==raaaX.shape[0]):
+				i0 = 0
+
+def TestGradient():
+
+	iPatterns = 5;
+	iPatternSamples = 6;
+
+
+	# Create random input vectors
+	raaX = numpy.random.randn(iPatterns,iPatternSamples,3)*.1
+
+	# Create random target vectors
+	raaT = numpy.random.randn(iPatterns,2)*.1
+
+	# Create layer 0 with random weights and biases
 	oL0 = SequenceDecimatingNetwork.Layer(3, numpy.random.randn(9,4)*.1, numpy.random.randn(4)*.1)
+
+	# Create layer 1 with random weights and biases
 	oL1 = SequenceDecimatingNetwork.Layer(2, numpy.random.randn(8,2)*.1, numpy.random.randn(2)*.1)
 
+	# Create object
 	o = SequenceDecimatingNetwork([oL0,oL1])
-	raG = o.ComputeGradient(raaX, raaT)
+
+	# Compute gradient using backpropagation
+	(raG, rError, rRmse) = o.ComputeGradient(raaX, raaT)
+
+	# Compute gradient numerically
 	raGn = o.ComputeGradientNumerical(raaX, raaT)
-	print(raG[0:4])
-	print(raGn[0:4])
 
-	rE = max(numpy.abs(raG-raGn))
-#print(rE)
-#	print(raW.shape)
+	# Compute error measure
+	rError = 2*sum((raG-raGn)**2)/sum(0.5*(raG**2+raGn**2))
 
-Test()
+	# Report error measure
+	print("Gradient Test: rError={:f}".format(rError))
+
+def TestTrain():
+
+	iPatterns = 1000
+	rScale = .01
+
+	raaX = numpy.random.randn(iPatterns,6,3)*rScale
+
+	oL0 = SequenceDecimatingNetwork.Layer(3, numpy.random.randn(9,4)*rScale, numpy.random.randn(4)*rScale)
+	oL1 = SequenceDecimatingNetwork.Layer(2, numpy.random.randn(8,2)*rScale, numpy.random.randn(2)*rScale)
+
+	o0 = SequenceDecimatingNetwork([oL0, oL1])
+
+
+	oL0 = SequenceDecimatingNetwork.Layer(3, numpy.random.randn(9,4)*rScale, numpy.random.randn(4)*rScale)
+	oL1 = SequenceDecimatingNetwork.Layer(2, numpy.random.randn(8,2)*rScale, numpy.random.randn(2)*rScale)
+
+	o1 = SequenceDecimatingNetwork([oL0, oL1])
+
+	raaT = o0.ComputeOutputs(raaX)
+
+	o1.Train(raaX, raaT, 100000, 0.01, 0.5)
+
+TestTrain()
