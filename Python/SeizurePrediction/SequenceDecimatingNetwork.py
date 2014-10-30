@@ -12,6 +12,8 @@ import numpy
 # * Train
 
 class SequenceDecimatingNetwork:
+
+	# Small offset to prevent log underflow when computing 
 	rEps = 1e-10
 
 	## Layer
@@ -287,6 +289,6 @@ def TestTrain():
 
 	raaT = o0.ComputeOutputs(raaX)
 
-	o1.Train(raaX, raaT, 100000, 0.01, 0.5)
+	o1.Train(raaX, raaT, 1000, 0.01, 0.5)
 
 TestTrain()
