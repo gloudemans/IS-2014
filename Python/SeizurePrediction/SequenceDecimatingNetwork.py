@@ -282,7 +282,7 @@ class SequenceDecimatingNetwork:
 		# Coerce the shape
 		raaE.shape = self.oaStates[self.iLayers].raaX.shape
 
-		_raaE = cudamat.CUDAMatrix(raaE)
+		_raaE = cudamat.CUDAMatrix(raaE.T)
 
 		# For each layer...
 		for iLayer in range(self.iLayers-1,-1,-1):
@@ -295,8 +295,14 @@ class SequenceDecimatingNetwork:
 			# Compute the gradient of error with respect to weight
 			self.oaStates[iLayer].raaWg = numpy.dot(self.oaStates[iLayer].raaX.T, raaE)
 
+			self.oaStates[iLayer]._raaWg = cudamat.dot(self.oaStates[iLayer]._raaX, _raaE.T)
+
+
 			# Compute gradient of error with respect to bias
 			self.oaStates[iLayer].raBg = numpy.sum(raaE,0)
+
+			self.oaStates[iLayer]._raBg = _raaE.sum(1)
+
 
 			# If error is needed for next layer...
 			if(iLayer>0):
@@ -304,14 +310,25 @@ class SequenceDecimatingNetwork:
 				# Backpropagate the error
 				raaE = numpy.dot(raaE,self.oaLayers[iLayer].raaW.T)
 
+				_raaE = cudamat.dot(self.oaLayers[iLayer]._raaW.T, _raaE)
+
 				# Compute the sample count for prior layer
 				iSamples = raaE.shape[0]*self.oaLayers[iLayer].iDecimation
+
+				iSamples = _raaE.shape[1]*self.oaLayers[iLayer].iDecimation
 
 				# Undecimate error
 				raaE = numpy.reshape(raaE,(iSamples,-1))
 
+				iSize = numpy.prod(_raaE.shape)
+				iN = iSize//iSamples
+				_raaE.reshape((iN,iSamples))
+
 				# Compute deferred hadamard product with derivative so shapes match
 				raaE = raaE*self.oaStates[iLayer].raaD
+
+				# Compute deferred hadamard product with derivative so shapes match
+				_raaE.mult(self.oaStates[iLayer]._raaD)				
 
 		# Get the serialized gradient vector
 		raG = self.GetGradientVector()
@@ -333,6 +350,63 @@ class SequenceDecimatingNetwork:
 	# * rRate - specifies the learning rate
 	# * rMomentum - specifies the momentum to apply
 	# * fProgress - specifies the progress callback
+
+	def Train(self, raaaX, raaaT, iPatterns, rRate, rMomentum, fProgress=None):
+
+		# Clear the batch start index
+		i0 = 0
+
+		# Retrieve the weight vector
+		raW = self.GetWeightVector()
+
+		# Create momentum array
+		raDelta = numpy.zeros(raW.shape)
+
+		# Clear the pattern counter
+		iPattern = 0
+
+		# While there are more patterns to process...
+		while(iPattern<iPatterns):
+
+			# Compute a batch stop index that won't exceed the pattern count or the number of patterns in the input 
+			i1 = min(i0 + min(self.iBatch,iPatterns-iPattern), raaaX.shape[0])
+
+			# Slice the batch
+			raaaXs = raaaX[i0:i1,:,:]
+			raaaTs = raaaT[i0:i1,:,:]
+
+			# Increment the number of patterns procressed
+			iPattern += i1-i0
+
+			# Advance the batch start index
+			i0 = i1;
+
+			# Compute the gradient
+			(raG, rError, rRmse) = self.ComputeGradient(raaaXs, raaaTs)
+
+			# If progress callback specified...
+			if(fProgress):
+
+				# Call it
+				fProgress(iPattern, rError, rRmse)
+
+			# Update the weight with momentum
+			raDelta[0:self.iWeights] = raDelta[0:self.iWeights]*rMomentum + raG[0:self.iWeights]*rRate
+
+			# Update the biases with no momentum
+			raDelta[self.iWeights:] = raG[self.iWeights:]*rRate
+
+			# Update the local weights
+			raW = raW - raDelta;
+
+			# Insert updated weights into the network
+			self.SetWeightVector(raW)
+
+			# If we've reached the end of the input array...
+			if(i0==raaaX.shape[0]):
+
+				# Wrap to the beginning
+				i0 = 0
 
 	def Train(self, raaaX, raaaT, iPatterns, rRate, rMomentum, fProgress=None):
 
@@ -442,8 +516,8 @@ class SequenceDecimatingNetwork:
 		# return(raW)
 			#	self._raP.get_col_slice()
 
-		#return(self.raP.copy())
-		return(self._raP.asarray().flatten())
+		return(self.raP.copy())
+		#return(self._raP.asarray().flatten())
 
 	## SetWeightVector(self, raW)
 	# Set all learnable network parameters from a parameter vector.
@@ -633,4 +707,4 @@ def TestTrain():
 
 cudamat.init()
 cudamat.CUDAMatrix.init_random(seed = 42)
-TestTrain()
+TestGradient()
