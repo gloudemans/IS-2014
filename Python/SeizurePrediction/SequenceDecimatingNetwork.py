@@ -124,6 +124,47 @@ class SequenceDecimatingNetwork:
 		# Need an extra state for the network output
 		self.oaStates.append(SequenceDecimatingNetwork.State())
 
+		self.raP  = numpy.empty((self.iWeights+self.iBiases))
+		self._raP = cudamat.empty((1,self.iWeights+self.iBiases))
+
+		# For each layer...
+		iBase = 0
+		for iLayer in range(self.iLayers):
+
+			# Count weights
+			iChunk = self.oaLayers[iLayer].raaW.size
+
+			(x,y) = self.oaLayers[iLayer].raaW.shape
+			self.raP[iBase:iBase+iChunk] = self.oaLayers[iLayer].raaW.flatten()
+			self.oaLayers[iLayer].raaW = self.raP[iBase:iBase+iChunk].reshape((x,y))
+
+			iChunk = numpy.prod(self.oaLayers[iLayer]._raaW.shape)
+
+			(x,y) = self.oaLayers[iLayer]._raaW.shape
+			self._raP.set_col_slice(iBase,iBase+iChunk,self.oaLayers[iLayer]._raaW.reshape((1,iChunk)))
+			self.oaLayers[iLayer]._raaW = self._raP.get_col_slice(iBase,iBase+iChunk)
+			self.oaLayers[iLayer]._raaW.reshape((x,y))
+
+			iBase += iChunk
+
+		# For each layer...
+		for iLayer in range(self.iLayers):
+
+			# Count weights
+			iChunk = self.oaLayers[iLayer].raB.size
+
+			self.raP[iBase:iBase+iChunk] = self.oaLayers[iLayer].raB.flatten()
+			self.oaLayers[iLayer].raB = self.raP[iBase:iBase+iChunk]
+
+			iChunk = numpy.prod(self.oaLayers[iLayer]._raB.shape)
+
+			(x,y) = self.oaLayers[iLayer]._raB.shape
+			self._raP.set_col_slice(iBase,iBase+iChunk,self.oaLayers[iLayer]._raB.reshape((1,iChunk)))
+			self.oaLayers[iLayer]._raB = self._raP.get_col_slice(iBase,iBase+iChunk)
+			self.oaLayers[iLayer]._raB.reshape((x,y))
+
+			iBase += iChunk		
+
 	## (raaaY) = (self, raaaX, bComputeDerivatives=False)
 	# Compute network outputs from the specified network input, optionally
 	# computing derivatives to use for subsequent gradient computation. The input
@@ -205,9 +246,7 @@ class SequenceDecimatingNetwork:
 		raaaYx = numpy.reshape(self.oaStates[iLayer+1]._raaX.transpose().asarray(),(iPatterns,iInputLayerSamples/iDecimation,-1))
 
 		#x = self.oaStates[iLayer+1].raaD-self.oaStates[iLayer+1]._raaD.asarray().T
-		print(raaaY-raaaYx)
-		xx
-
+		print(numpy.max(raaaY[:]-raaaYx[:]))
 
 		return(raaaY)
 
@@ -380,23 +419,27 @@ class SequenceDecimatingNetwork:
 
 	def GetWeightVector(self):
 
-		# Start with an empty array
-		raW = numpy.array([])
+		# # Start with an empty array
+		# raW = numpy.array([])
 
-		# For each layer...
-		for iLayer in range(self.iLayers):
+		# # For each layer...
+		# for iLayer in range(self.iLayers):
 
-			# Concatentate the flattend weights
-			raW = numpy.concatenate((raW, self.oaLayers[iLayer].raaW.ravel()))
+		# 	# Concatentate the flattend weights
+		# 	raW = numpy.concatenate((raW, self.oaLayers[iLayer].raaW.ravel()))
 
-		# For each layer...
-		for iLayer in range(self.iLayers):
+		# # For each layer...
+		# for iLayer in range(self.iLayers):
 
-			# Concatentate the flattend biases
-			raW = numpy.concatenate((raW, self.oaLayers[iLayer].raB.ravel()))
+		# 	# Concatentate the flattend biases
+		# 	raW = numpy.concatenate((raW, self.oaLayers[iLayer].raB.ravel()))
 
-		# Return the parameter vector
-		return(raW)
+		# # Return the parameter vector
+		# return(raW)
+			#	self._raP.get_col_slice()
+
+		#return(self.raP.copy())
+		return(self._raP.asarray().flatten())
 
 	## SetWeightVector(self, raW)
 	# Set all learnable network parameters from a parameter vector.
@@ -405,31 +448,35 @@ class SequenceDecimatingNetwork:
 
 	def SetWeightVector(self, raW):
 
-		# Keep this or you'll be sorry!
-		# Make a copy to prevent object internal arrays from referencing the raW
-		# parameter, which surprisingly they will do otherwise. 
-		raW = numpy.copy(raW)
+		# # Keep this or you'll be sorry!
+		# # Make a copy to prevent object internal arrays from referencing the raW
+		# # parameter, which surprisingly they will do otherwise. 
+		# raW = numpy.copy(raW)
 
-		# Clear the base counter
-		iBase = 0
+		# # Clear the base counter
+		# iBase = 0
 
-		# For each layer in the network...
-		for iLayer in range(self.iLayers):
+		# # For each layer in the network...
+		# for iLayer in range(self.iLayers):
 
-			# Grab a chunk from the parameter vector and coerce it to fit the weight matrix
-			self.oaLayers[iLayer].raaW = numpy.reshape(raW[iBase:iBase+self.oaLayers[iLayer].raaW.size],self.oaLayers[iLayer].raaW.shape)
+		# 	# Grab a chunk from the parameter vector and coerce it to fit the weight matrix
+		# 	self.oaLayers[iLayer].raaW = numpy.reshape(raW[iBase:iBase+self.oaLayers[iLayer].raaW.size],self.oaLayers[iLayer].raaW.shape)
 
-			# Advance the base index
-			iBase += self.oaLayers[iLayer].raaW.size
+		# 	# Advance the base index
+		# 	iBase += self.oaLayers[iLayer].raaW.size
 
-		# For each layer in the network...
-		for iLayer in range(self.iLayers):
+		# # For each layer in the network...
+		# for iLayer in range(self.iLayers):
 
-			# Grab a chunk from the parameter vector and coerce it to fit the bias matrix
-			self.oaLayers[iLayer].raB  = numpy.reshape(raW[iBase:iBase+self.oaLayers[iLayer].raB.size], self.oaLayers[iLayer].raB.shape)
+		# 	# Grab a chunk from the parameter vector and coerce it to fit the bias matrix
+		# 	self.oaLayers[iLayer].raB  = numpy.reshape(raW[iBase:iBase+self.oaLayers[iLayer].raB.size], self.oaLayers[iLayer].raB.shape)
 
-			# Advance the base index
-			iBase += self.oaLayers[iLayer].raB.size
+		# 	# Advance the base index
+		# 	iBase += self.oaLayers[iLayer].raB.size
+		self.raP[:] = raW
+		self._raP.assign(cudamat.CUDAMatrix(numpy.atleast_2d(raW)))
+		#self.raP[:] = 1
+		#print(self.oaLayers[0].raaW)
 
 	## (raG) = ComputeGradientNumerical(self, raaX, raaT, rDelta=1e-6)
 	# Numerically compute the gradient of error with respect to all learnable 
