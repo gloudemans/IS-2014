@@ -282,11 +282,15 @@ class SequenceDecimatingNetwork:
 		# Coerce the shape
 		raaE.shape = self.oaStates[self.iLayers].raaX.shape
 
+		_raaE = cudamat.CUDAMatrix(raaE)
+
 		# For each layer...
 		for iLayer in range(self.iLayers-1,-1,-1):
 
 			# Measure the layer input
 			(iSamples, iFeatures) = self.oaStates[iLayer].raaX.shape
+
+			(iFeatures, iSamples) = self.oaStates[iLayer]._raaX.shape			
 
 			# Compute the gradient of error with respect to weight
 			self.oaStates[iLayer].raaWg = numpy.dot(self.oaStates[iLayer].raaX.T, raaE)
