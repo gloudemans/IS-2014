@@ -246,7 +246,7 @@ class SequenceDecimatingNetwork:
 		raaaYx = numpy.reshape(self.oaStates[iLayer+1]._raaX.transpose().asarray(),(iPatterns,iInputLayerSamples/iDecimation,-1))
 
 		#x = self.oaStates[iLayer+1].raaD-self.oaStates[iLayer+1]._raaD.asarray().T
-		print(numpy.max(raaaY[:]-raaaYx[:]))
+		# print(numpy.max(raaaY[:]-raaaYx[:]))
 
 		return(raaaY)
 
@@ -516,12 +516,30 @@ class SequenceDecimatingNetwork:
 		# return(raW)
 			#	self._raP.get_col_slice()
 
-		return(self.raP.copy())
-		#return(self._raP.asarray().flatten())
+		#return(self.raP.copy())
+
+		#self.oaLayers[0].raaW[:,:]=1
+		#self.oaLayers[0]._raaW.assign(1)
+		#print(self.raP)
+		#print(self._raP.asarray()[:])
+		#xx
+
+		# a = self.raP
+		# b = self._raP.asarray().squeeze()
+		# rError = sum(2*(a-b)**2/sum(a**2+b**2))
+		# print("rError={:f}".format(rError))
+
+		# # x = self._raP.asarray().squeeze().copy()
+		# #print(self._raP.asarray().squeeze()-self.raP)
+
+		# #x=
+		# #return(self.raP)
+		return(self._raP.asarray().squeeze())
 
 	## SetWeightVector(self, raW)
 	# Set all learnable network parameters from a parameter vector.
-	#
+	#		return(self._raP.asarray().squeeze().copy())
+
 	# * raW - specifies the parameter vector
 
 	def SetWeightVector(self, raW):
@@ -567,7 +585,7 @@ class SequenceDecimatingNetwork:
 	# * rDelta - weight delta for slope computation
 	# * raG - returns gradient of error with respect to network parameters as a vector
 
-	def ComputeGradientNumerical(self, raaaX, raaaT, rDelta=1e-6):
+	def ComputeGradientNumerical(self, raaaX, raaaT, rDelta=1e-3):
 
 		# Compute flattened outputs
 		raY = self.ComputeOutputs(raaaX).flatten()
@@ -579,7 +597,7 @@ class SequenceDecimatingNetwork:
 		rError = -numpy.sum(raT*numpy.log(raY+self.rEps) + (1-raT)*numpy.log(1-raY+self.rEps))
 
 		# Get the weight vector
-		raW = self.GetWeightVector()
+		raW = self.GetWeightVector().copy()
 
 		# Make gradient vector in same shape
 		raG = numpy.zeros(raW.shape)
