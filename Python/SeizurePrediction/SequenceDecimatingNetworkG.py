@@ -185,8 +185,27 @@ class SequenceDecimatingNetwork:
 		raaX = numpy.reshape(raaaX,(iPatterns*iInputLayerSamples,iFeatures))
 
 		# Save input samples
-		# self.oaStates[0].raaX  = raaX
-		self.oaStates[0]._raaX = cudamat.CUDAMatrix(raaX.T)
+		_raaX = cudamat.CUDAMatrix(raaX.T)
+
+		(_raaY, iDecimation) = self.ComputeOutputsCore(_raaX, bComputeDerivatives)
+
+		raaaY = numpy.reshape(_raaY.asarray().T,(iPatterns,iInputLayerSamples/iDecimation,-1))
+
+		return(raaaY)
+
+	def ComputeOutputsCore(self, _raaX, bComputeDerivatives=False):
+
+	# 	# Measure the input
+	# 	(iPatterns, iInputLayerSamples, iFeatures) = raaaX.shape
+
+	# 	# Make 2d
+	# 	raaX = numpy.reshape(raaaX,(iPatterns*iInputLayerSamples,iFeatures))
+
+	# 	# Save input samples
+	# 	# self.oaStates[0].raaX  = raaX
+	# 	self.oaStates[0]._raaX = cudamat.CUDAMatrix(raaX.T)
+
+		self.oaStates[0]._raaX = _raaX
 	
 		# Initialize overall decimation ratio
 		iDecimation = 1
@@ -237,9 +256,10 @@ class SequenceDecimatingNetwork:
 
 		# Reshape as patterns, samples, features
 		# raaaY = numpy.reshape(numpy.copy(self.oaStates[self.iLayers].raaX),(iPatterns,iInputLayerSamples/iDecimation,-1))
-		raaaY = numpy.reshape(self.oaStates[iLayer+1]._raaX.transpose().asarray(),(iPatterns,iInputLayerSamples/iDecimation,-1))
+		#raaaY = numpy.reshape(self.oaStates[iLayer+1]._raaX.transpose().asarray(),(iPatterns,iInputLayerSamples/iDecimation,-1))
 
-		return(raaaY)
+		#return(raaaY)
+		return(self.oaStates[self.iLayers]._raaX, iDecimation)
 
 	## (raG, rError, rRmse) = ComputeGradient(self, raaaX, raaaT)
 	# Compute the gradient of error with respect to all learnable network parameters.
@@ -252,28 +272,29 @@ class SequenceDecimatingNetwork:
 	# * rError - returns cross entropy
 	# * rRmse - returns root mean square error
 
-	def ComputeGradient(self, raaaX, raaaT):
+	# def ComputeGradient(self, raaaX, raaaT):	
+	def ComputeGradient(self, _raaE):
 
-		# Compute the network outputs while saving derivatives
-		raaaY = self.ComputeOutputs(raaaX, bComputeDerivatives=True)
+		# # Compute the network outputs while saving derivatives
+		# raaaY = self.ComputeOutputs(raaaX, bComputeDerivatives=True)
 
-		# Flatten the network outputs and targets to simplify error metrics
-		raY = raaaY.flatten()
-		raT = raaaT.flatten()
+		# # Flatten the network outputs and targets to simplify error metrics
+		# raY = raaaY.flatten()
+		# raT = raaaT.flatten()
 
-		# Compute cross entropy error
-		rError = -numpy.mean(raT*numpy.log(raY+self.rEps) + (1-raT)*numpy.log(1-raY+self.rEps))
+		# # Compute cross entropy error
+		# rError = -numpy.mean(raT*numpy.log(raY+self.rEps) + (1-raT)*numpy.log(1-raY+self.rEps))
 
-		# Compute root mean square error
-		rRmse  = numpy.sqrt(numpy.mean((raT-raY)**2))
+		# # Compute root mean square error
+		# rRmse  = numpy.sqrt(numpy.mean((raT-raY)**2))
 
-		# Compute output layer error
-		raaE = raaaY - raaaT
+		# # Compute output layer error
+		# raaE = raaaY - raaaT
 
-		# Coerce the shape
-		# raaE.shape = self.oaStates[self.iLayers].raaX.shape
-		raaE.shape = self.oaStates[self.iLayers]._raaX.shape[1],self.oaStates[self.iLayers]._raaX.shape[0]
-		_raaE = cudamat.CUDAMatrix(raaE.T)
+		# # Coerce the shape
+		# # raaE.shape = self.oaStates[self.iLayers].raaX.shape
+		# raaE.shape = self.oaStates[self.iLayers]._raaX.shape[1],self.oaStates[self.iLayers]._raaX.shape[0]
+		# _raaE = cudamat.CUDAMatrix(raaE.T)
 
 		# For each layer...
 		for iLayer in range(self.iLayers-1,-1,-1):
@@ -315,7 +336,8 @@ class SequenceDecimatingNetwork:
 		raG = self.GetGradientVector()
 
 		# Return gradient and error metrics
-		return((raG, rError, rRmse))
+		# return((raG, rError, rRmse))
+		return(raG)
 
 	## Train(self, raaaX, raaaT, iPatterns, rRate, rMomentum, fProgress=None)
 	# Train the network using the specified input patterns, desired output patterns,
@@ -346,81 +368,86 @@ class SequenceDecimatingNetwork:
 		# Clear the pattern counter
 		iPattern = 0
 
-		# While there are more patterns to process...
-		while(iPattern<iPatterns):
+		# Measure the input
+		(iPatternsX, iPatternSamplesX, iPatternFeaturesX) = raaaX.shape
+		(iPatternsT, iPatternSamplesT, iPatternFeaturesT) = raaaT.shape
 
-			# Compute a batch stop index that won't exceed the pattern count or the number of patterns in the input 
-			i1 = min(i0 + min(self.iBatch,iPatterns-iPattern), raaaX.shape[0])
+		# Make 2d
+		raaX = numpy.reshape(raaaX,(iPatternsX*iPatternSamplesX,iPatternFeaturesX))
+		raaT = numpy.reshape(raaaT,(iPatternsT*iPatternSamplesT,iPatternFeaturesT))
 
-			# Slice the batch
-			raaaXs = raaaX[i0:i1,:,:]
-			raaaTs = raaaT[i0:i1,:,:]
-
-			# Increment the number of patterns procressed
-			iPattern += i1-i0
-
-			# Advance the batch start index
-			i0 = i1;
-
-			# Compute the gradient
-			(raG, rError, rRmse) = self.ComputeGradient(raaaXs, raaaTs)
-
-			# If progress callback specified...
-			if(fProgress):
-
-				# Call it
-				fProgress(iPattern, rError, rRmse)
-
-			# Update the weight with momentum
-			raDelta[0:self.iWeights] = raDelta[0:self.iWeights]*rMomentum + raG[0:self.iWeights]*rRate
-
-			# Update the biases with no momentum
-			raDelta[self.iWeights:] = raG[self.iWeights:]*rRate
-
-			# Update the local weights
-			raW = raW - raDelta;
-
-			# Insert updated weights into the network
-			self.SetWeightVector(raW)
-
-			# If we've reached the end of the input array...
-			if(i0==raaaX.shape[0]):
-
-				# Wrap to the beginning
-				i0 = 0
-
-	def Train(self, raaaX, raaaT, iPatterns, rRate, rMomentum, fProgress=None):
-
-		# Clear the batch start index
-		i0 = 0
-
-		# Retrieve the weight vector
-		raW = self.GetWeightVector()
-
-		# Create momentum array
-		raDelta = numpy.zeros(raW.shape)
-
-		# Clear the pattern counter
-		iPattern = 0
+		# Save input samples
+		_raaX = cudamat.CUDAMatrix(raaX.T)
+		_raaT = cudamat.CUDAMatrix(raaT.T)
 
 		# While there are more patterns to process...
 		while(iPattern<iPatterns):
 
 			# Compute a batch stop index that won't exceed the pattern count or the number of patterns in the input 
-			i1 = min(i0 + min(self.iBatch,iPatterns-iPattern), raaaX.shape[0])
+			i1 = min(i0 + min(self.iBatch,iPatterns-iPattern), iPatternsX)
 
 			# Slice the batch
-			raaaXs = raaaX[i0:i1,:,:]
-			raaaTs = raaaT[i0:i1,:,:]
+			_raaXs = _raaX.get_col_slice(i0*iPatternSamplesX,i1*iPatternSamplesX) # raaaX[i0:i1,:,:]
+			_raaTs = _raaT.get_col_slice(i0*iPatternSamplesT,i1*iPatternSamplesT) # raaaT[i0:i1,:,:]
+
+			# Measure the input
+			#(iPatternsS, iInputLayerSamples, iFeatures) = raaaXs.shape
+
+			# Make 2d
+			#raaX = numpy.reshape(raaaXs,(iPatternsS*iInputLayerSamples,iFeatures))
+
+			#reshape(raaaXs,(iPatternsS*iInputLayerSamples,iFeatures))
+
+			# Save input samples
+			#_raaX = cudamat.CUDAMatrix(raaX.T)
+
+			# Compute outputs and keep deivatives
+			(_raaYs, iDecimation) = self.ComputeOutputsCore(_raaXs, bComputeDerivatives=True)
+
+			#print(_raaTs.shape,iPatternSamplesX,iPatternFeaturesX)
+			#print(_raaYs.shape,iPatternSamplesT,iPatternFeaturesT)
+
+			#raaaYs = numpy.reshape(_raaY.asarray().T,(iPatternsS,iInputLayerSamples/iDecimation,-1))
 
 			# Increment the number of patterns procressed
 			iPattern += i1-i0
 
 			# Advance the batch start index
-			i0 = i1;
+			i0 = i1
+
+			# FFF
+
+			# # Compute the network outputs while saving derivatives
+			# raaaY = self.ComputeOutputs(raaaX, bComputeDerivatives=True)
+
+			# # Flatten the network outputs and targets to simplify error metrics
+			raY = _raaYs.asarray().flatten()
+			raT = _raaTs.asarray().flatten()
+
+			# # Compute cross entropy error
+			rError = -numpy.mean(raT*numpy.log(raY+self.rEps) + (1-raT)*numpy.log(1-raY+self.rEps))
+
+			# # Compute root mean square error
+			rRmse  = numpy.sqrt(numpy.mean((raT-raY)**2))
+
+			# # Compute output layer error
+			#raaE = raaaYs - raaaTs
+
+			# # Coerce the shape
+			# # raaE.shape = self.oaStates[self.iLayers].raaX.shape
+			#raaE.shape = self.oaStates[self.iLayers]._raaX.shape[1],self.oaStates[self.iLayers]._raaX.shape[0]
+			#_raaE = cudamat.CUDAMatrix(raaE.T)
+
+			_raaE = _raaYs.copy()
+			_raaE.subtract(_raaTs)
+
+			# FFF
+			#rError=0
+			#rRmse = 0
 
 			# Compute the gradient
-			(raG, rError, rRmse) = self.ComputeGradient(raaaXs, raaaTs)
+			#(raG, rError, rRmse) = self.ComputeGradient(raaaXs, raaaTs)
+			raG = self.ComputeGradient(_raaE)
 
 			# If progress callback specified...
 			if(fProgress):
