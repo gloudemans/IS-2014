@@ -666,8 +666,8 @@ def TestTrain():
 	raaaT = o0.ComputeOutputs(raaaX)
 
 	# Train network 1 to model network zero
-	o1.Train(raaaX, raaaT,  1000, 0.01, 0.0, lambda iPattern, rError, rRmse:	print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
-	o1.Train(raaaX, raaaT, 10000, 0.01, 0.9, lambda iPattern, rError, rRmse:	print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
+	o1.Train(raaaX, raaaT,  1000, 0.01, 0.0, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
+	o1.Train(raaaX, raaaT, 10000, 0.01, 0.9, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
 
 cudamat.init()
 cudamat.CUDAMatrix.init_random(seed = 42)
