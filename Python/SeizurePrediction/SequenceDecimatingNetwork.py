@@ -446,93 +446,93 @@ class SequenceDecimatingNetwork:
 		# Return the gradient
 		return(raG)
 
-## TestGradient()
-# Configure a small random network. Compute the error gradient using backpropagation
-# and compute it numerically. Compute and print an error measure between the two methods.
+# ## TestGradient()
+# # Configure a small random network. Compute the error gradient using backpropagation
+# # and compute it numerically. Compute and print an error measure between the two methods.
 
-def TestGradient():
+# def TestGradient():
 
-	# Specify number of test patterns
-	iPatterns = 100;
+# 	# Specify number of test patterns
+# 	iPatterns = 100;
 
-	# Specify number of samples per pattern
-	iPatternSamples = 6;
+# 	# Specify number of samples per pattern
+# 	iPatternSamples = 6;
 
-	# Specify scale of random inputs and random network parameters
-	rScale = 1;
+# 	# Specify scale of random inputs and random network parameters
+# 	rScale = 1;
 
-	# Create random input vectors
-	raaaX = numpy.random.rand(iPatterns,iPatternSamples,3)
+# 	# Create random input vectors
+# 	raaaX = numpy.random.rand(iPatterns,iPatternSamples,3)
 
-	# Create random target vectors
-	raaaT = numpy.random.randn(iPatterns,1,2)*rScale
+# 	# Create random target vectors
+# 	raaaT = numpy.random.randn(iPatterns,1,2)*rScale
 
-	# Create layer 0 with random weights and biases
-	oL0 = SequenceDecimatingNetwork.Layer(3, numpy.random.randn(9,4)*rScale, numpy.random.randn(4)*rScale)
+# 	# Create layer 0 with random weights and biases
+# 	oL0 = SequenceDecimatingNetwork.Layer(3, numpy.random.randn(9,4)*rScale, numpy.random.randn(4)*rScale)
 
-	# Create layer 1 with random weights and biases
-	oL1 = SequenceDecimatingNetwork.Layer(2, numpy.random.randn(8,2)*rScale, numpy.random.randn(2)*rScale)
+# 	# Create layer 1 with random weights and biases
+# 	oL1 = SequenceDecimatingNetwork.Layer(2, numpy.random.randn(8,2)*rScale, numpy.random.randn(2)*rScale)
 
-	# Create object
-	o = SequenceDecimatingNetwork([oL0,oL1])
+# 	# Create object
+# 	o = SequenceDecimatingNetwork([oL0,oL1])
 
-	# Compute gradient using backpropagation
-	(raG, rError, rRmse) = o.ComputeGradient(raaaX, raaaT)
+# 	# Compute gradient using backpropagation
+# 	(raG, rError, rRmse) = o.ComputeGradient(raaaX, raaaT)
 
-	# Compute gradient numerically
-	raGn = o.ComputeGradientNumerical(raaaX, raaaT)
+# 	# Compute gradient numerically
+# 	raGn = o.ComputeGradientNumerical(raaaX, raaaT)
 
-	# Compute normalized error measure
-	rError = 2*sum((raG-raGn)**2)/sum(0.5*(raG**2+raGn**2))
+# 	# Compute normalized error measure
+# 	rError = 2*sum((raG-raGn)**2)/sum(0.5*(raG**2+raGn**2))
 
-	# Report error measure
-	print("Gradient Test: rError={:f}".format(rError))
+# 	# Report error measure
+# 	print("Gradient Test: rError={:f}".format(rError))
 
-## TestTrain()
-# Configure two small random networks withthe same geometry but different weights and biases.
-# Train one network to model the other while displaying error measure.
+# ## TestTrain()
+# # Configure two small random networks withthe same geometry but different weights and biases.
+# # Train one network to model the other while displaying error measure.
 
-def TestTrain():
+# def TestTrain():
 
-	# Specify the number of training patterns to generate
-	iPatterns = 1000
+# 	# Specify the number of training patterns to generate
+# 	iPatterns = 1000
 
-	# Integer value to change network scale
-	iMagnify = 100
+# 	# Integer value to change network scale
+# 	iMagnify = 100
 
-	# Specify the scale of random initialization parameters
-	rScale = 0.001
+# 	# Specify the scale of random initialization parameters
+# 	rScale = 0.001
 
-	# Create layer 0 with random weights and biases
-	oL0 = SequenceDecimatingNetwork.Layer(3, numpy.random.randn(9*iMagnify,4*iMagnify)*rScale, numpy.random.randn(4*iMagnify)*rScale)
+# 	# Create layer 0 with random weights and biases
+# 	oL0 = SequenceDecimatingNetwork.Layer(3, numpy.random.randn(9*iMagnify,4*iMagnify)*rScale, numpy.random.randn(4*iMagnify)*rScale)
 
-	# Create layer 1 with random weights and biases
-	oL1 = SequenceDecimatingNetwork.Layer(2, numpy.random.randn(8*iMagnify,2*iMagnify)*rScale, numpy.random.randn(2*iMagnify)*rScale)
+# 	# Create layer 1 with random weights and biases
+# 	oL1 = SequenceDecimatingNetwork.Layer(2, numpy.random.randn(8*iMagnify,2*iMagnify)*rScale, numpy.random.randn(2*iMagnify)*rScale)
 
-	# Create object
-	o0 = SequenceDecimatingNetwork([oL0, oL1])
+# 	# Create object
+# 	o0 = SequenceDecimatingNetwork([oL0, oL1])
 
-	# Create layer 0 with random weights and biases
-	oL0 = SequenceDecimatingNetwork.Layer(3, numpy.random.randn(9*iMagnify,4*iMagnify)*rScale, numpy.random.randn(4*iMagnify)*rScale)
+# 	# Create layer 0 with random weights and biases
+# 	oL0 = SequenceDecimatingNetwork.Layer(3, numpy.random.randn(9*iMagnify,4*iMagnify)*rScale, numpy.random.randn(4*iMagnify)*rScale)
 
-	# Create layer 1 with random weights and biases
-	oL1 = SequenceDecimatingNetwork.Layer(2, numpy.random.randn(8*iMagnify,2*iMagnify)*rScale, numpy.random.randn(2*iMagnify)*rScale)
+# 	# Create layer 1 with random weights and biases
+# 	oL1 = SequenceDecimatingNetwork.Layer(2, numpy.random.randn(8*iMagnify,2*iMagnify)*rScale, numpy.random.randn(2*iMagnify)*rScale)
 
-	# Create object
-	o1 = SequenceDecimatingNetwork([oL0, oL1])
+# 	# Create object
+# 	o1 = SequenceDecimatingNetwork([oL0, oL1])
 
-	# Specify samples in input pattern
-	iPatternSamples = 6;
+# 	# Specify samples in input pattern
+# 	iPatternSamples = 6;
 
-	# Create random input vectors
-	raaaX = numpy.random.rand(iPatterns,iPatternSamples,3*iMagnify)
+# 	# Create random input vectors
+# 	raaaX = numpy.random.rand(iPatterns,iPatternSamples,3*iMagnify)
 
-	# Create training vectors from network zero
-	raaaT = o0.ComputeOutputs(raaaX)
+# 	# Create training vectors from network zero
+# 	raaaT = o0.ComputeOutputs(raaaX)
 
-	# Train network 1 to model network zero
-	o1.Train(raaaX, raaaT,  1000, 0.01, 0.0, lambda iPattern, rError, rRmse:	print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
-	o1.Train(raaaX, raaaT, 10000, 0.01, 0.9, lambda iPattern, rError, rRmse:	print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
+# 	# Train network 1 to model network zero
+# 	o1.Train(raaaX, raaaT,  1000, 0.01, 0.0, lambda iPattern, rError, rRmse:	print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
+# 	o1.Train(raaaX, raaaT, 10000, 0.01, 0.9, lambda iPattern, rError, rRmse:	print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
 
 
-TestTrain()
+# TestTrain()
