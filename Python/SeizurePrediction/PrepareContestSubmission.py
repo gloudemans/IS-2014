@@ -90,11 +90,11 @@ def TrainClassifier(sShufflePath, sRatePath, iElectrodes, tlGeometry, rHoldout=0
         iV = iElectrodes
         for (iDecimation, iH) in tlGeometry:
             raaW = numpy.random.randn(iDecimation*iV,iH)*rWeightInitScale
-            raB  = numpy.random.zeros(iH)
-            oLayer = SequenceDecimatingNetwork.Layer(iDecimation, raaW, raB)
+            raB  = numpy.zeros(iH)
+            oLayer = SequenceDecimatingNetwork.SequenceDecimatingNetwork.Layer(iDecimation, raaW, raB)
             oaLayers.append(oLayer) 
 
-        oModel = SequenceDecimatingNetwork(oaLayers)
+        oModel = SequenceDecimatingNetwork.SequenceDecimatingNetwork(oaLayers)
 
     # Load model if it exists, otherwise create it
     def LoadModel(sRatePath, iElectrodes, tlGeometry):
