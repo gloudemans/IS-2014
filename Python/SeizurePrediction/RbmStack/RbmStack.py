@@ -1,5 +1,12 @@
 import math
 import numpy
+try:
+    import cudamat
+    cudamat.init()
+    cudamat.CUDAMatrix.init_random(seed = 42)
+    bCudamatLoaded = True
+except ImportError:
+    bCudamatLoaded = False
 
 #RbmStack
 # This class implements a stack of restricted Boltzmann machines. It 
@@ -61,7 +68,7 @@ class Options:
         rDropH  = 0
 
         # No stochastic sampling of the hidden layer
-        bSample = 0
+        bSample = 1
 
         # Return training parameters
         return(rRate, rMomentum, rDropV, rDropH, bSample)
@@ -92,14 +99,7 @@ class RbmStack:
         self.oaLayer = oaLayer
 
         # Set the GPU flag
-        self.bUseGpu = bUseGpu
-
-        if(bUseGpu):
-
-            # Initialize cudamat
-            import cudamat
-            cudamat.init()
-            cudamat.CUDAMatrix.init_random(seed = 42)
+        self.bUseGpu = bUseGpu and bCudamatLoaded
 
         # Number of samples per training batch
         self.iBatchSamples = 100
@@ -296,7 +296,8 @@ class RbmStack:
                 # Reconstruct visible layer
                 raaXr, junk = self.UpdateStatesCPU(sActivationDn, raaW.T, raV, raaY)
 
-                rTotalSe, rTotalE = self.GetErrors(raaX, raaXr, sActivationDn)
+                # Compute error metrics
+                rTotalSe, rTotalE = self.GetErrorsCPU(raaX, raaXr, sActivationDn)
                     
                 # Finish the rmse calculation
                 rRmse = math.sqrt(rTotalSe/(raaX.size))
@@ -508,7 +509,7 @@ class RbmStack:
                 self.UpdateStatesGPU(sActivationDn, raaW.T, raV, raaY, raaXr, junk)
 
                 # Compute error metrics
-                rTotalSe, rTotalE = self.GetErrors(raaX, raaXr, sActivationDn)
+                rTotalSe, rTotalE = self.GetErrorsGPU(raaX, raaXr, sActivationDn)
                     
                 # Finish the rmse calculation
                 rRmse = math.sqrt(rTotalSe/(raaX.shape[0]*raaX.shape[1]))
@@ -763,6 +764,9 @@ class RbmStack:
         # While training samples remain...
         while(iIndex<iSamples):
 
+            # Compute largest allowable batch size
+            iBatch = min(iBatch, iSamples-iIndex)
+
             # Compute an indexer
             raaB = cudamat.empty((iBatch,raaX.shape[1]))
             
@@ -839,7 +843,7 @@ class RbmStack:
     # * rE - returns the sum of activation specific errors for
     #   all elements
 
-    def GetErrors(self, raaX, raaY, sActivation):
+    def GetErrorsCPU(self, raaX, raaY, sActivation):
         
         # Small value to avoid log underflows
         rEps = 1e-20         
@@ -868,6 +872,44 @@ class RbmStack:
           
         return(rSe, rE)
 
+    def GetErrorsGPU(self, raaX, raaY, sActivation):
+        
+        # Small value to avoid log underflows
+        rEps = 1e-20   
+
+        # Create error matrix
+        raaError = cudamat.empty(raaX.shape)
+
+        # Compute error
+        raaX.subtract(raaY, raaError)
+
+        # Compute sum of squares
+        rSe = raaError.euclid_norm()**2    
+
+        # Depending on the activation def type
+        if(sActivation=="Logistic"):
+
+            _raaX = raaX.asarray()
+            _raaY = raaY.asarray()
+
+            # Compute the cross entropy error
+            rE = -numpy.sum(numpy.multiply(_raaX,numpy.log(_raaY+rEps)) + numpy.multiply(1-_raaX,numpy.log(1-_raaY+rEps)))
+
+        elif(sActivation=="Linear"):
+
+            # Compute the squared error
+            rE = rSe
+
+        elif(sActivation=="Softmax"):
+
+            _raaX = raaX.asarray()
+            _raaY = raaY.asarray()
+
+            # Compute the cross entropy error
+            rE = -numpy.sum(numpy.multiply(_raaX,numpy.log(_raaY+rEps)))
+          
+        return(rSe, rE)
+
     ## ComputeReconstructionError
     # Autoencode the specified samples and compute error metrics 
     # for the reconstructions.
@@ -883,7 +925,7 @@ class RbmStack:
         raaY = self.Autoencode(raaX)
         
         # Compute total error metrics
-        (rTotalSe, rTotalE) = self.GetErrors(raaX, raaY, self.oaLayer[0].sActivationDn)
+        (rTotalSe, rTotalE) = self.GetErrorsCPU(raaX, raaY, self.oaLayer[0].sActivationDn)
             
         # Compute average RMSE
         rRmse = math.sqrt(rTotalSe/raaX.size)
@@ -900,22 +942,22 @@ def Test(sSrc):
     import pandas
 
     # Specify epochs
-    iEpochs = 1
+    iEpochs = 10
 
     # Read the MNIST dataset as a pandas.DataFrame
     df = pandas.read_pickle(sSrc)
 
     # Retrieve the pixel columns and scale them from zero to one
-    raaX = numpy.array(df.ix[:9917,0:783])/256.0
+    raaX = numpy.array(df.ix[:,0:783])/256.0
 
     # Create 784 x 1000 x 30 rbm layers
-    oaLayers = [Layer(raaX.shape[1],100),Layer(100,100)]
+    oaLayers = [Layer(raaX.shape[1],1000),Layer(1000,30)]
 
     # Create training options
     oOptions = Options(iEpochs)
 
     # Create RbmStack
-    oRbmStack = RbmStack(oaLayers)
+    oRbmStack = RbmStack(oaLayers, True)
 
     # Train using the specified options
     oRbmStack.TrainAutoencoder(raaX, oOptions)
