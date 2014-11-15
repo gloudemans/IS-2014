@@ -93,7 +93,7 @@ class RbmStack:
     #
     # * oaLayer - specifies the network configuration.
     
-    def __init__(self, oaLayer, bUseGpu=False):
+    def __init__(self, oaLayer, bUseGpu=True):
 
         # Layer properties
         self.oaLayer = oaLayer
@@ -948,7 +948,7 @@ def Test(sSrc):
     df = pandas.read_pickle(sSrc)
 
     # Retrieve the pixel columns and scale them from zero to one
-    raaX = numpy.array(df.ix[:,0:783])/256.0
+    raaX = numpy.array(df.ix[:10000,0:783])/256.0
 
     # Create 784 x 1000 x 30 rbm layers
     oaLayers = [Layer(raaX.shape[1],1000),Layer(1000,30)]
@@ -957,7 +957,7 @@ def Test(sSrc):
     oOptions = Options(iEpochs)
 
     # Create RbmStack
-    oRbmStack = RbmStack(oaLayers, True)
+    oRbmStack = RbmStack(oaLayers)
 
     # Train using the specified options
     oRbmStack.TrainAutoencoder(raaX, oOptions)
