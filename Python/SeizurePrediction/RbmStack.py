@@ -5,7 +5,6 @@
 
 import math
 import numpy
-import cudamat
 
 #RbmStack
 # This class implements a stack of restricted Boltzmann machines. It 
@@ -69,9 +68,7 @@ class Options:
         self.fEpochReport = fEpochReport
             
 class RbmStack:
-
-
-           
+  
     ## RbmStack
     # Construct a new object with the specified configuration.
     #
@@ -93,41 +90,36 @@ class RbmStack:
     # Perform greedy pre-training of the network using the specified
     # training data and options.
 
-    def TrainAutoencoder(self, _raaX, oOptions):
+    def TrainAutoencoder(self, raaX, oOptions):
 
-        # Initialize cudamat
-        cudamat.init()
-        cudamat.CUDAMatrix.init_random(seed = 42)
-
-        # Count the number of training samples
-        raaX = cudamat.CUDAMatrix(_raaX)
+        # Measure the input vector
         iSamples = raaX.shape[0]
-                  
+                 
         # For each layer pair...
         for iLayer in range(len(self.oaLayer)):
 
             # Clone layer weights on device
-            raaW = cudamat.CUDAMatrix(self.oaLayer[iLayer].raaW)
-            raV  = cudamat.CUDAMatrix(numpy.atleast_2d(self.oaLayer[iLayer].raV))
-            raH  = cudamat.CUDAMatrix(numpy.atleast_2d(self.oaLayer[iLayer].raH))
+            raaW = self.oaLayer[iLayer].raaW
+            raV  = self.oaLayer[iLayer].raV
+            raH  = self.oaLayer[iLayer].raH
 
             # Measure this layer
             iVs = self.oaLayer[iLayer].iV
             iHs = self.oaLayer[iLayer].iH
 
             # Create a delta array to retain momentum state
-            raaDelta = cudamat.zeros((iVs,iHs))
-            raDeltaV = cudamat.zeros((iVs,1))
-            raDeltaH = cudamat.zeros((iHs,1))
+            raaDelta = numpy.zeros((iVs,iHs))
+            raDeltaV = numpy.zeros((iVs,1))
+            raDeltaH = numpy.zeros((iHs,1))
 
             # Create a diff array to retain current update
-            raaDiff  = cudamat.empty((iVs,iHs))
-            raDiffV  = cudamat.empty((1,iVs))
-            raDiffH  = cudamat.empty((1,iHs))
+            raaDiff  = numpy.empty((iVs,iHs))
+            raDiffV  = numpy.empty((1,iVs))
+            raDiffH  = numpy.empty((1,iHs))
             
             # Create an array to retain the layer output for 
             # training the next layer
-            raaY = cudamat.empty((iSamples, iHs))
+            raaY = numpy.empty((iSamples, iHs))
             
             # Get short references to layer parameters
             sActivationUp = self.oaLayer[iLayer].sActivationUp
@@ -155,17 +147,18 @@ class RbmStack:
                     iBatch = min(self.iBatchSamples, iSamples-iIndex)
 
                     # Create working arrays on the device
-                    baaH   = cudamat.empty((iBatch,iHs))
-                    raaH1d = cudamat.empty((iBatch,iHs))
-                    raaH1s = cudamat.empty((iBatch,iHs))
-                    raaH3  = cudamat.empty((iBatch,iHs))
+                    baaH   = numpy.empty((iBatch,iHs))
+                    raaH1d = numpy.empty((iBatch,iHs))
+                    raaH1s = numpy.empty((iBatch,iHs))
+                    raaH3  = numpy.empty((iBatch,iHs))
 
-                    baaV   = cudamat.empty((iBatch,iVs))
-                    raaV0  = cudamat.empty((iBatch,iVs))
-                    raaV2  = cudamat.empty((iBatch,iVs))
+                    baaV   = numpy.empty((iBatch,iVs))
+                    raaV0  = numpy.empty((iBatch,iVs))
+                    raaV2  = numpy.empty((iBatch,iVs))
 
                     # Get a batch of inputs in raaV0
-                    raaX.get_row_slice(iIndex, iIndex+iBatch, target=raaV0)
+                    # raaX.get_row_slice(iIndex, iIndex+iBatch, target=raaV0)
+                    raaV0 = raaX[iIndex:iIndex+iBatch,:]
                     
                     # If we need to drop visible units...
                     if(rDropV>0):
@@ -177,7 +170,7 @@ class RbmStack:
 
                     # Advance the markov chain V0->H1
                     # raaH1d, raaH1s = self._UpdateStates(sActivationUp, raaW, raH, raaV0, rDropV, True)
-                    self._UpdateStates(sActivationUp, raaW, raH, raaV0, raaH1d, raaH1s, rDropV, True)
+                    self.UpdateStates(sActivationUp, raaW, raH, raaV0, raaH1d, raaH1s, rDropV, True)
 
                     # If stochastic sampling is enabled...
                     if (bSample):
@@ -200,7 +193,7 @@ class RbmStack:
 
                     # Advance the markov chain H1->V2
                     # raaV2, junk  = self._UpdateStates(sActivationDn, raaW.T, raV, raaH1, rDropH)
-                    self._UpdateStates(sActivationDn, raaW.T, raV, raaH1, raaV2, junk, rDropH)
+                    self.UpdateStates(sActivationDn, raaW.T, raV, raaH1, raaV2, junk, rDropH)
 
                     # If we need to drop visible units...
                     if(rDropV>0):
@@ -210,7 +203,7 @@ class RbmStack:
 
                     # Advance the markov chain V2->H3
                     # raaH3, junk  = self._UpdateStates(sActivationUp, raaW, raH, raaV2, rDropV)
-                    self._UpdateStates(sActivationUp, raaW, raH, raaV2, raaH3, junk, rDropV)
+                    self.UpdateStates(sActivationUp, raaW, raH, raaV2, raaH3, junk, rDropV)
 
                     # If we need to drop hidden units...
                     if(rDropH>0):
@@ -254,40 +247,40 @@ class RbmStack:
                     else:
                         
                         # Scale all weights uniformly
-                        #raaDiff = ( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) )*rScale 
-                        cudamat.dot(raaV0.T,raaH1,raaDiff)
-                        raaDiff.subtract_dot(raaV2.T,raaH3)
-                        raaDiff.mult(rScale)
+                        raaDiff = ( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) )*rScale 
+                        # cudamat.dot(raaV0.T,raaH1,raaDiff)
+                        # raaDiff.subtract_dot(raaV2.T,raaH3)
+                        # raaDiff.mult(rScale)
 
                     # Compute bias gradients
-                    #raDiffV = numpy.sum(raaV0-raaV2,axis=0)*rScale              
-                    #raDiffH = numpy.sum(raaH1-raaH3,axis=0)*rScale
+                    raDiffV = numpy.sum(raaV0-raaV2,axis=0)*rScale              
+                    raDiffH = numpy.sum(raaH1-raaH3,axis=0)*rScale
 
-                    raaV0.sum(axis=0,mult=rScale).subtract(raaV2.sum(axis=0,mult=rScale),target=raDiffV)
-                    raaH1.sum(axis=0,mult=rScale).subtract(raaH3.sum(axis=0,mult=rScale),target=raDiffH)
+                    #raaV0.sum(axis=0,mult=rScale).subtract(raaV2.sum(axis=0,mult=rScale),target=raDiffV)
+                    #raaH1.sum(axis=0,mult=rScale).subtract(raaH3.sum(axis=0,mult=rScale),target=raDiffH)
 
                     # Update the weight delta array using the current momentum and
                     # learning rate
-                    # raaDelta = raaDelta*rMomentum + raaDiff*rRate
-                    raaDelta.mult(rMomentum)
-                    raaDiff.mult(rRate)
-                    raaDelta.add(raaDiff)
+                    raaDelta = raaDelta*rMomentum + raaDiff*rRate
+                    # raaDelta.mult(rMomentum)
+                    # raaDiff.mult(rRate)
+                    # raaDelta.add(raaDiff)
 
                     # Updated the weights
-                    #self.oaLayer[iLayer].raaW = self.oaLayer[iLayer].raaW + raaDelta
-                    raaW.add(raaDelta)
+                    self.oaLayer[iLayer].raaW = self.oaLayer[iLayer].raaW + raaDelta
+                    #raaW.add(raaDelta)
                     
                     # Advance to the next minibatch
                     iIndex = iIndex + iBatch
 
                 #
-                raaXr = cudamat.empty((iSamples, iVs))
+                raaXr = numpy.empty((iSamples, iVs))
 
                 # raaV2, junk  = self._UpdateStates(sActivationDn, raaW.T, raV, raaH1, 0)
-                self._UpdateStates(sActivationUp, raaW, raH, raaX, raaY, junk, 0)
+                self.UpdateStates(sActivationUp, raaW, raH, raaX, raaY, junk, 0)
                 
                 # raaV2, junk  = self._UpdateStates(sActivationDn, raaW.T, raV, raaH1, 0)
-                self._UpdateStates(sActivationDn, raaW.T, raV, raaY, raaXr, junk, 0)
+                self.UpdateStates(sActivationDn, raaW.T, raV, raaY, raaXr, junk, 0)
 
                 rTotalSe, rTotalE = self.GetErrors(raaX, raaXr, sActivationDn)
                     
@@ -373,15 +366,13 @@ class RbmStack:
 
     #     return(raaY, baaY)
 
-    def UpdateStates(self, sType, raaW, raB, raaX, rDropout=0, bSample=False):
+    def UpdateStates(self, sType, raaW, raB, raaX, junk1, junk2, rDropout=0, bSample=False):
        
         baaY = [];
 
         # Compute the scale factor to compensate for dropout so that
         # average activations remain the same
         rScale = 1/(1-rDropout)
-
-        print(raaX.shape)
         
         # Compute activations
         iRows = raaX.shape[0]
@@ -692,38 +683,32 @@ class RbmStack:
     # * rE - returns the sum of activation def specific errors for
     #   all elements
 
-
     def GetErrors(self, raaX, raaY, sActivation):
         
         # Small value to avoid log underflows
         rEps = 1e-20         
         
-        raaError = cudamat.empty(raaX.shape)
-        raaX.subtract(raaY, raaError)
-        raaError.mult(raaError)
-        raError = raaError.sum(axis=0)
-        rError = raError.sum(axis=1)
-        rSe = rError.asarray()[0,0]
-        #print(rSe)
+        # Compute error
+        raaError = raaX-raaY
 
-        # # Sum all squared errors
-        # rSe = numpy.sum(numpy.square(raaError))
+        # Sum all squared errors
+        rSe = numpy.sum(numpy.square(raaError))
 
-        # # Depending on the activation def type
-        # if(sActivation=="Logistic"):
+        # Depending on the activation def type
+        if(sActivation=="Logistic"):
 
-        #     # Compute the average cross entropy error
-        #     rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)) + numpy.multiply(1-raaX,numpy.log(1-raaY+rEps)))
+            # Compute the average cross entropy error
+            rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)) + numpy.multiply(1-raaX,numpy.log(1-raaY+rEps)))
 
-        # elif(sActivation=="Linear"):
+        elif(sActivation=="Linear"):
 
-        #     # Compute the squared error
-        #     rE = rSe
+            # Compute the squared error
+            rE = rSe
 
-        # elif(sActivation=="Softmax"):
+        elif(sActivation=="Softmax"):
 
-        #     # Compute the average cross entropy error
-        #     rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)))
+            # Compute the average cross entropy error
+            rE = -numpy.sum(numpy.multiply(raaX,numpy.log(raaY+rEps)))
 
         rE = 0
           
@@ -773,10 +758,6 @@ class RbmStack:
             
         return(oaLayer)
 
-    @staticmethod
-    def TestX():
-        print('Hello')
-
 # Define a function to exercise the class (crudely!)
 def Test():
 
@@ -784,48 +765,17 @@ def Test():
     import pandas
     import pprint
 
-    # Define classes used for RbmStack interfacing
-    class Layer:
-
-        def __init__(self, iSize, iEpochs, sActivationUp='Logistic'):
-            self.iSize = iSize
-            self.raaW = object
-            self.sActivationUp = sActivationUp
-            self.sActivationDn = "Logistic"
-            self.raRmse     = numpy.zeros(iEpochs)
-            self.raError    = numpy.zeros(iEpochs)
-
-    class LayerOptions:
-
-        def __init__(self, iEpochs):
-
-            self.raDropV    = 0.1*numpy.ones(iEpochs)
-            self.raDropH    = 0.1*numpy.ones(iEpochs)
-            self.raMomentum = 0.9*numpy.zeros(iEpochs)
-            self.raMomentum[:5]=0.5;
-            self.raRate     = 0.1*numpy.ones(iEpochs)
-            self.baSample   = numpy.zeros(iEpochs)
-            self.raRmse     = numpy.zeros(iEpochs)
-
-
-    class Options:
-
-        def __init__(self, iEpochs):
-
-            self.iEpochs = iEpochs
-            self.oaLayer = [LayerOptions(iEpochs), LayerOptions(iEpochs), LayerOptions(iEpochs), LayerOptions(iEpochs), LayerOptions(iEpochs)]  
-
     # Specify epochs
     iEpochs = 10
 
     # Read the MNIST dataset as a pandas.DataFrame
-    df = pandas.read_pickle("../Datasets/MNIST/MNIST.pkl")
+    df = pandas.read_pickle("C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\MNIST\\MNIST.pkl")
 
     # Retrieve the pixel columns and scale them from zero to one
     raaX = numpy.array(df.ix[:9999,0:783])/256.0
 
     # Create 784 x 1000 x 30 rbm layers
-    oaLayers = [Layer(raaX.shape[1],iEpochs),Layer(1000,iEpochs),Layer(500,iEpochs),Layer(250,iEpochs),Layer(30,iEpochs,sActivationUp='Linear')]
+    oaLayers = [Layer(raaX.shape[1],1000),Layer(1000,500),Layer(500,250),Layer(250,30,sActivationUp='Linear')]
 
     # Create training options
     oOptions = Options(iEpochs)
@@ -836,9 +786,5 @@ def Test():
     # Train using the specified options
     oRbmStack.TrainAutoencoder(raaX, oOptions)
 
-    #print(o.oaLayer[1].raaW)
-
-#import cProfile
-#cProfile.run('Test()')
-#Test()
+Test()
 
