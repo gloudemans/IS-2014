@@ -349,7 +349,6 @@ class SequenceDecimatingNetwork:
 			raaE = raaY.copy()
 			raaE.subtract(raaT)
 			raG = self.ComputeGradientGPU(raaE)
-			raG = raG.asarray()
 
 		else:
 
@@ -758,7 +757,7 @@ def TestTrain():
 	o1 = SequenceDecimatingNetwork([oL0, oL1])
 
 	# Specify samples in input pattern
-	iPatternSamples = 6;
+	iPatternSamples = 6
 
 	# Create random input vectors
 	raaaX = numpy.random.rand(iPatterns,iPatternSamples,3*iMagnify)
@@ -770,4 +769,4 @@ def TestTrain():
 	o1.Train(raaaX, raaaT,  1000, 0.01, 0.5, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
 	o1.Train(raaaX, raaaT, 10000, 0.01, 0.9, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
 
-TestGradient()
+TestTrain()
