@@ -92,7 +92,7 @@ class SequenceDecimatingNetwork:
 	#
 	# * oaLayers - specifies the list connection layers
 
-	def __init__(self, oaLayers, bUseGpu=False):
+	def __init__(self, oaLayers, bUseGpu=True):
 
 		# Layer properties
 		self.oaLayer = oaLayers
@@ -229,13 +229,6 @@ class SequenceDecimatingNetwork:
 		# Save input samples
 		self.oaStates[0].raaX  = raaX
 
-		#print(raaX.shape)
-		#print(bComputeDerivatives)
-
-		#print(self.oaStates[0].raaX.shape)
-		#print(iFeatures)
-		#print(iLayer)
-
 		# Initialize overall decimation ratio
 		iDecimation = 1
 
@@ -272,7 +265,7 @@ class SequenceDecimatingNetwork:
 				# Compute logistic'(x) activation derivitive
 				self.oaStates[iLayer+1].raaD = (1-self.oaStates[iLayer+1].raaX)*self.oaStates[iLayer+1].raaX
 
-		# Reshape as patterns, samples, features
+		# return(raaY, iDecimation)
 		return(self.oaStates[self.iLayers].raaX, iDecimation)
 
 	def ComputeOutputsGPU(self, raaX, bComputeDerivatives):
@@ -297,7 +290,6 @@ class SequenceDecimatingNetwork:
 
 			# Decimate the layer
 			# self.oaStates[iLayer].raaX = numpy.reshape(self.oaStates[iLayer].raaX, (-1, iFeatures))
-
 			iSize = numpy.prod(self.oaStates[iLayer].raaX.shape)
 			self.oaStates[iLayer].raaX = self.oaStates[iLayer].raaX.reshape((iFeatures,iSize//iFeatures))
 	
@@ -305,10 +297,7 @@ class SequenceDecimatingNetwork:
 			# self.oaStates[iLayer+1].raaX = numpy.dot(self.oaStates[iLayer].raaX, self.oaLayers[iLayer].raaW)
 			self.oaStates[iLayer+1].raaX = cudamat.dot(self.oaLayers[iLayer].raaW, self.oaStates[iLayer].raaX)
 
-			# For each sample...
-			# for iSample in range(self.oaStates[iLayer+1].raaX.shape[0]):
-
-			# 	# Add bias
+			# For each sample...add bias
 			# 	self.oaStates[iLayer+1].raaX[iSample,:] += self.oaLayers[iLayer].raB
 			self.oaStates[iLayer+1].raaX.add_col_vec(self.oaLayers[iLayer].raB)
 
@@ -326,33 +315,51 @@ class SequenceDecimatingNetwork:
 				self.oaStates[iLayer+1].raaD.subtract(self.oaStates[iLayer+1].raaX)
 				self.oaStates[iLayer+1].raaD.mult(self.oaStates[iLayer+1].raaX)
 
-		# Reshape as patterns, samples, features
-		# raaaY = numpy.reshape(numpy.copy(self.oaStates[self.iLayers].raaX),(iPatterns,iInputLayerSamples/iDecimation,-1))
-		#raaaY = numpy.reshape(self.oaStates[iLayer+1].raaX.transpose().asarray(),(iPatterns,iInputLayerSamples/iDecimation,-1))
-
-		#return(raaaY)
+		# return(raaY, iDecimation)
 		return(self.oaStates[self.iLayers].raaX, iDecimation)
 
+	## (raG) = ComputeGradient(self, raaaX, raaaT)
+	# Compute the gradient of error with respect to all learnable network parameters.
+	#
+	# (iPatterns, iSamples, iFeatures)
+	#
+	# * raaaX - specifies network inputs
+	# * raaaT - specifies the desired network outputs
+	# * raG - returns gradient of error with respect to network parameters as a vector
+	# * rError - returns cross entropy
+	# * rRmse - returns root mean square error
+
+	def ComputeGradient(self, raaaX, raaaT):
+
+
+		# Measure the input
+		(iPatternsX, iPatternSamplesX, iPatternFeaturesX) = raaaX.shape
+		(iPatternsT, iPatternSamplesT, iPatternFeaturesT) = raaaT.shape
+
+		# Make 2d
+		raaX = numpy.reshape(raaaX,(iPatternsX*iPatternSamplesX,iPatternFeaturesX))
+		raaT = numpy.reshape(raaaT,(iPatternsT*iPatternSamplesT,iPatternFeaturesT))
+
+		# Save input samples
+		if(self.bUseGpu):
+			raaX = cudamat.CUDAMatrix(raaX.T)
+			raaT = cudamat.CUDAMatrix(raaT.T)
+
+			(raaY, iDecimation) = self.ComputeOutputsGPU(raaX, bComputeDerivatives=True)
+			raaE = raaY.copy()
+			raaE.subtract(raaT)
+			raG = self.ComputeGradientGPU(raaE)
+			raG = raG.asarray()
+
+		else:
+
+			(raaY, iDecimation) = self.ComputeOutputsCPU(raaX, bComputeDerivatives=True)
+			raaE = raaY-raaT
+			raG = self.ComputeGradientCPU(raaE)
+
+		return(raG)
+
 	def ComputeGradientCPU(self, raaE):
-
-		# # Compute the network outputs while saving derivatives
-		# raaaY = self.ComputeOutputs(raaaX, bComputeDerivatives=True)
-
-		# # Flatten the network outputs and targets to simplify error metrics
-		# raY = raaaY.flatten()
-		# raT = raaaT.flatten()
-
-		# # Compute cross entropy error
-		# rError = -numpy.mean(raT*numpy.log(raY+self.rEps) + (1-raT)*numpy.log(1-raY+self.rEps))
-
-		# # Compute root mean square error
-		# rRmse  = numpy.sqrt(numpy.mean((raT-raY)**2))
-
-		# # Compute output layer error
-		# raaE = raaaY - raaaT
-
-		# # Coerce the shape
-		# raaE.shape = self.oaStates[self.iLayers].raaX.shape
 
 		# For each layer...
 		for iLayer in range(self.iLayers-1,-1,-1):
@@ -387,40 +394,7 @@ class SequenceDecimatingNetwork:
 		# Return gradient and error metrics
 		return(raG)
 
-	## (raG, rError, rRmse) = ComputeGradient(self, raaaX, raaaT)
-	# Compute the gradient of error with respect to all learnable network parameters.
-	#
-	# (iPatterns, iSamples, iFeatures)
-	#
-	# * raaaX - specifies network inputs
-	# * raaaT - specifies the desired network outputs
-	# * raG - returns gradient of error with respect to network parameters as a vector
-	# * rError - returns cross entropy
-	# * rRmse - returns root mean square error
-
-	# def ComputeGradient(self, raaaX, raaaT):	
 	def ComputeGradientGPU(self, raaE):
-
-		# # Compute the network outputs while saving derivatives
-		# raaaY = self.ComputeOutputs(raaaX, bComputeDerivatives=True)
-
-		# # Flatten the network outputs and targets to simplify error metrics
-		# raY = raaaY.flatten()
-		# raT = raaaT.flatten()
-
-		# # Compute cross entropy error
-		# rError = -numpy.mean(raT*numpy.log(raY+self.rEps) + (1-raT)*numpy.log(1-raY+self.rEps))
-
-		# # Compute root mean square error
-		# rRmse  = numpy.sqrt(numpy.mean((raT-raY)**2))
-
-		# # Compute output layer error
-		# raaE = raaaY - raaaT
-
-		# # Coerce the shape
-		# # raaE.shape = self.oaStates[self.iLayers].raaX.shape
-		# raaE.shape = self.oaStates[self.iLayers].raaX.shape[1],self.oaStates[self.iLayers].raaX.shape[0]
-		# raaE = cudamat.CUDAMatrix(raaE.T)
 
 		# For each layer...
 		for iLayer in range(self.iLayers-1,-1,-1):
@@ -522,10 +496,6 @@ class SequenceDecimatingNetwork:
 				raaE = _raaYs.copy()
 				raaE.subtract(_raaTs)
 
-				# FFF
-				#rError=0
-				#rRmse = 0
-
 				# Compute the gradient
 				#(raG, rError, rRmse) = self.ComputeGradient(raaaXs, raaaTs)
 				raG = self.ComputeGradientGPU(raaE)
@@ -545,62 +515,17 @@ class SequenceDecimatingNetwork:
 				raY = _raaYs.flatten()
 				raT = _raaTs.flatten()
 
-			# Measure the input
-			#(iPatternsS, iInputLayerSamples, iFeatures) = raaaXs.shape
-
-			# Make 2d
-			#raaX = numpy.reshape(raaaXs,(iPatternsS*iInputLayerSamples,iFeatures))
-
-			#reshape(raaaXs,(iPatternsS*iInputLayerSamples,iFeatures))
-
-			# Save input samples
-			#raaX = cudamat.CUDAMatrix(raaX.T)
-
-			# Compute outputs and keep deivatives
-			#(_raaYs, iDecimation) = self.ComputeOutputsCore(_raaXs, bComputeDerivatives=True)
-
-			#print(_raaTs.shape,iPatternSamplesX,iPatternFeaturesX)
-			#print(_raaYs.shape,iPatternSamplesT,iPatternFeaturesT)
-
-			#raaaYs = numpy.reshape(_raaY.asarray().T,(iPatternsS,iInputLayerSamples/iDecimation,-1))
-
 			# Increment the number of patterns procressed
 			iPattern += i1-i0
 
 			# Advance the batch start index
 			i0 = i1
 
-			# FFF
-
-			# # Compute the network outputs while saving derivatives
-			# raaaY = self.ComputeOutputs(raaaX, bComputeDerivatives=True)
-
-
-
-			# # Compute cross entropy error
+			# Compute cross entropy error
 			rError = -numpy.mean(raT*numpy.log(raY+self.rEps) + (1-raT)*numpy.log(1-raY+self.rEps))
 
-			# # Compute root mean square error
+			# Compute root mean square error
 			rRmse  = numpy.sqrt(numpy.mean((raT-raY)**2))
-
-			# # Compute output layer error
-			#raaE = raaaYs - raaaTs
-
-			# # Coerce the shape
-			# # raaE.shape = self.oaStates[self.iLayers].raaX.shape
-			#raaE.shape = self.oaStates[self.iLayers].raaX.shape[1],self.oaStates[self.iLayers].raaX.shape[0]
-			#raaE = cudamat.CUDAMatrix(raaE.T)
-
-			# raaE = _raaYs.copy()
-			# raaE.subtract(_raaTs)
-
-			# # FFF
-			# #rError=0
-			# #rRmse = 0
-
-			# # Compute the gradient
-			# #(raG, rError, rRmse) = self.ComputeGradient(raaaXs, raaaTs)
-			# raG = self.ComputeGradient(raaE)
 
 			# If progress callback specified...
 			if(fProgress):
@@ -788,7 +713,7 @@ def TestGradient():
 	o = SequenceDecimatingNetwork([oL0,oL1])
 
 	# Compute gradient using backpropagation
-	(raG, rError, rRmse) = o.ComputeGradient(raaaX, raaaT)
+	raG = o.ComputeGradient(raaaX, raaaT)
 
 	# Compute gradient numerically
 	raGn = o.ComputeGradientNumerical(raaaX, raaaT)
@@ -809,10 +734,10 @@ def TestTrain():
 	iPatterns = 1000
 
 	# Integer value to change network scale
-	iMagnify = 50
+	iMagnify = 100
 
 	# Specify the scale of random initialization parameters
-	rScale = 0.001
+	rScale = 0.01
 
 	# Create layer 0 with random weights and biases
 	oL0 = SequenceDecimatingNetwork.Layer(3, numpy.random.randn(9*iMagnify,4*iMagnify)*rScale, numpy.random.randn(4*iMagnify)*rScale)
@@ -842,7 +767,7 @@ def TestTrain():
 	raaaT = o0.ComputeOutputs(raaaX)
 
 	# Train network 1 to model network zero
-	o1.Train(raaaX, raaaT,  1000, 0.01, 0.0, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
+	o1.Train(raaaX, raaaT,  1000, 0.01, 0.5, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
 	o1.Train(raaaX, raaaT, 10000, 0.01, 0.9, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
 
-TestTrain()
+TestGradient()
