@@ -4,6 +4,7 @@ import scipy.io # for loadmat
 import scipy.signal # for detrend
 import numpy
 import pickle
+import TemporalHierarchy
 import SequenceDecimatingNetwork
 
 # Arrange the .mat format data files distributed by Kaggle into the following
@@ -19,11 +20,11 @@ import SequenceDecimatingNetwork
 
 def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2):
 
-    # List the patients
+    # List (patients directory name, electrode count) 
     lPatients = [('Dog_1',16),('Dog_2',16),('Dog_3',16),('Dog_4',16),('Dog_5',15),('Patient_1',15),('Patient_2',24)]
 
     # For each patient...
-    for (sPatient,iElectrodes) in lPatients:
+    for (sPatient,iSensors) in lPatients:
 
         # Path to patient data
         sPatientPath = os.path.join(sDatasetPath,sPatient)
@@ -46,13 +47,24 @@ def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2):
         # Train autoencoder using the specified geometry
         # TrainDecimatingAutoencoder(sRatePath)
 
-        TrainClassifier(sShufflePath, sRatePath, iElectrodes, tlGeometry, rHoldout)
+        TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout)
+
+# #
+# def TrainDecimatingAutoencoder(sRatePath):
+# # For each network layer
+# #   Construct a pile of training patterns using all prior layers
+# #   Train the layer
+# #   Save the layer parameters
+# # 
+# # 
+
+
 
 # Get name for the model
-def GetModelName(sRatePath, iElectrodes, tlGeometry):
+def GetModelName(sRatePath, iSensors, tlGeometry):
 
     sName = "Model";
-    iFeatures = iElectrodes
+    iFeatures = iSensors
     for (a,b) in tlGeometry:
         sName += "_{:d}x{:d}".format(a*iFeatures,b)
         iFeatures = b
@@ -60,11 +72,12 @@ def GetModelName(sRatePath, iElectrodes, tlGeometry):
 
     return(os.path.join(sRatePath,sName))
 
-def TrainClassifier(sShufflePath, sRatePath, iElectrodes, tlGeometry, rHoldout=0.2, iBatches=10, iBatchFiles=1000, iBatchPatterns=1000):
+def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout=0.2, iBatches=10, iBatchFiles=1000, iBatchPatterns=1000):
 
     rWeightInitScale = 0.01
     rRate = 0.01
     rMomentum = 0.5
+    rWeightDecay = 0.0001
 
     def LoadTrainingShuffle(sSrc, rHoldout):
 
@@ -88,13 +101,13 @@ def TrainClassifier(sShufflePath, sRatePath, iElectrodes, tlGeometry, rHoldout=0
 
         return(lT0, lT1, lV0, lV1, lTest)
 
-    def CreateModel(sModelName, iElectrodes, tlGeometry, rWeightInitScale):
+    def CreateModel(sModelName, iSensors, tlGeometry, rWeightInitScale):
 
         # Create an empty list of layers
         oaLayers = []
 
         # First visible pattern size is number of electrodes
-        iV = iElectrodes
+        iV = iSensors
 
         # For each layer in geometry...
         for (iDecimation, iH) in tlGeometry:
@@ -133,7 +146,7 @@ def TrainClassifier(sShufflePath, sRatePath, iElectrodes, tlGeometry, rHoldout=0
         return(raaaData)
 
     # Get name for the model
-    sModelName = GetModelName(sRatePath, iElectrodes, tlGeometry)
+    sModelName = GetModelName(sRatePath, iSensors, tlGeometry)
 
     # If the model already exists...
     if(os.path.exists(sModelName)):
@@ -147,7 +160,7 @@ def TrainClassifier(sShufflePath, sRatePath, iElectrodes, tlGeometry, rHoldout=0
     else:
 
         # Create a new model
-        oModel = CreateModel(sModelName, iElectrodes, tlGeometry, rWeightInitScale)
+        oModel = CreateModel(sModelName, iSensors, tlGeometry, rWeightInitScale)
 
     iTrainIndex = 0;
     (lT0, lT1, lV0, lV1, lTest) = LoadTrainingShuffle(sShufflePath, rHoldout)
@@ -244,12 +257,12 @@ def PreprocessMatFiles(sSrc, sDst, rSampleFrequency=400, bDetrend=True):
         lKeys = [s for s in oMat.keys() if "segment" in s]
 
         raaData     = oMat[lKeys[0]]['data'][0,0]
-        iElectrodes = oMat[lKeys[0]]['data'][0,0].shape[0]
+        iSensors = oMat[lKeys[0]]['data'][0,0].shape[0]
         iSamples    = oMat[lKeys[0]]['data'][0,0].shape[1]
         rLength     = oMat[lKeys[0]]['data_length_sec'][0,0][0,0]   
         rFrequency  = oMat[lKeys[0]]['sampling_frequency'][0,0][0,0]
 
-        return((raaData, iElectrodes, iSamples, rLength, rFrequency))
+        return((raaData, iSensors, iSamples, rLength, rFrequency))
 
     def ClassFromName(sFile):
 
@@ -293,7 +306,7 @@ def PreprocessMatFiles(sSrc, sDst, rSampleFrequency=400, bDetrend=True):
         if(not os.path.exists(sDstFile)):
 
             # Load the matfile
-            (raaData, iElectrodes, iSamples, rLength, rFrequency) = LoadMat(sSrc + '\\' + f)
+            (raaData, iSensors, iSamples, rLength, rFrequency) = LoadMat(sSrc + '\\' + f)
 
             # Compute the nearest integer decimation ratio
             iDecimationRatio = int(round(rFrequency/rSampleFrequency))
@@ -314,10 +327,10 @@ def PreprocessMatFiles(sSrc, sDst, rSampleFrequency=400, bDetrend=True):
             if bNormalize:
 
                 # For each electrode...
-                for iElectrode in range(iElectrodes):
+                for iSensor in range(iSensors):
 
                     # Force unit standard deviation
-                    raaData[iElectrode,:] /= raaData[iElectrode,:].std()
+                    raaData[iSensor,:] /= raaData[iSensor,:].std()
 
                 # Scale to specified peak to average ratio
                 raaData = numpy.maximum(numpy.minimum(1,raaData/(rPeakAverageRatio)),-1).astype(numpy.float32)
