@@ -5,7 +5,7 @@ import math
 import numpy
 import RbmStack
 
-def LoadTraining(sSrc, rFraction=0.80, iMaxFiles=None):
+def LoadTraining(sShuuflePath, sRatePath, rFraction=0.80, iMaxFiles=None):
 
     def LoadTrainingShuffle(sSrc):
 
@@ -13,9 +13,9 @@ def LoadTraining(sSrc, rFraction=0.80, iMaxFiles=None):
         l = f.read().split('\n')
         f.close()
 
-        lTest   = [s[:-4] for s in l if('test'       in s)]  
-        lTrain1 = [s[:-4] for s in l if('preictal'   in s)]
-        lTrain0 = [s[:-4] for s in l if('interictal' in s)]
+        lTest   = [s for s in l if('test'       in s)]  
+        lTrain1 = [s for s in l if('preictal'   in s)]
+        lTrain0 = [s for s in l if('interictal' in s)]
 
         return(lTrain0, lTrain1, lTest)
 
@@ -76,12 +76,12 @@ def LoadTraining(sSrc, rFraction=0.80, iMaxFiles=None):
 
         return(raaaData)
 
-    (lTrain0, lTrain1, lValid0, lValid1) = SplitTraining(os.path.join(sSrc,'Shuffle.csv'), rFraction,iMaxFiles)
+    (lTrain0, lTrain1, lValid0, lValid1) = SplitTraining(os.path.join(sShufflePath,'Shuffle.csv'), rFraction,iMaxFiles)
 
-    raaaTrain0 = LoadFiles(sSrc, lTrain0)
-    raaaTrain1 = LoadFiles(sSrc, lTrain1)
-    raaaValid0 = LoadFiles(sSrc, lValid0)
-    raaaValid1 = LoadFiles(sSrc, lValid1)
+    raaaTrain0 = LoadFiles(sRatePath, lTrain0)
+    raaaTrain1 = LoadFiles(sRatePath, lTrain1)
+    raaaValid0 = LoadFiles(sRatePath, lValid0)
+    raaaValid1 = LoadFiles(sRatePath, lValid1)
 
     return(raaaTrain0,raaaTrain1,raaaValid0,raaaValid1)
 
@@ -196,9 +196,7 @@ def FlipFlop(raaa0, raaa1, iPatterns, iLength, lDecimation, oaLayers):
 
     return(rRmse)
 
-
-
-def Train():
+def Train(sShufflePath, sRatePath, iEpochs):
 
     oLog = open('Log.txt','at')
 
@@ -211,18 +209,12 @@ def Train():
 
         Log('iLayer={}, iEpoch={}, bSample={}, rDropV={}, rDropH={}, rRate={}, rMomentum={}, rRmse={}'.format(iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse))
 
-    # Specify epochs
-    iEpochs = 100
-
-    # Select target directory
-    sDir = os.path.expanduser('~/IS-2014/Python/SeizurePrediction/Dog_1')
-
     # Establish training/validation split (80/20) & cap file loading
     rFraction = 0.8
     iMaxFiles = 100
 
     # Load data into arrays [files,samples,sensors]
-    (raaaTrain0,raaaTrain1,raaaValid0,raaaValid1) = LoadTraining(sDir,rFraction,iMaxFiles)
+    (raaaTrain0,raaaTrain1,raaaValid0,raaaValid1) = LoadTraining(sShufflePath, sRatePath, rFraction,iMaxFiles)
 
     # Construct 100000 training vectors using 16 contiguous samples from each file with no
     # further neural network processing
@@ -291,7 +283,14 @@ def Train():
 
     oLog.close()
 
-Train()
+# Specify epochs
+iEpochs = 100
+
+# Select target directory
+sShufflePath = "C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw\\Dog_1"
+sRatePath = "C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw\\Dog_1\\20Hz"
+
+Train(sShufflePath, sRatePath, iEpochs)
 
 
 
