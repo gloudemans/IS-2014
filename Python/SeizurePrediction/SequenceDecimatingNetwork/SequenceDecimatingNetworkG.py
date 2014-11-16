@@ -154,7 +154,7 @@ class SequenceDecimatingNetwork:
 				# Count weights
 				iChunk = self.oaLayers[iLayer].raB.size
 
-				raB = cudamat.CUDAMatrix(numpy.atleast_2d(self.oaLayers[iLayer].raB))
+				raB = cudamat.CUDAMatrix(numpy.atleast_2d(self.oaLayers[iLayer].raB).T)
 				(x,y) = raB.shape
 				self.raP.set_col_slice(iBase,iBase+iChunk,raB.reshape((1,iChunk)))
 				self.oaLayers[iLayer].raB = self.raP.get_col_slice(iBase,iBase+iChunk)
@@ -212,7 +212,7 @@ class SequenceDecimatingNetwork:
 		# If using gpu ...
 		if(self.bUseGpu):
 
-			(raaY, iDecimation) = self.ComputeOutputsGPU(raaX.T, bComputeDerivatives)
+			(raaY, iDecimation) = self.ComputeOutputsGPU(cudamat.CUDAMatrix(raaX.T), bComputeDerivatives)
 
 			raaaY = numpy.reshape(raaY.asarray().T,(iPatterns,iInputLayerSamples/iDecimation,-1))
 
@@ -228,6 +228,13 @@ class SequenceDecimatingNetwork:
 
 		# Save input samples
 		self.oaStates[0].raaX  = raaX
+
+		#print(raaX.shape)
+		#print(bComputeDerivatives)
+
+		#print(self.oaStates[0].raaX.shape)
+		#print(iFeatures)
+		#print(iLayer)
 
 		# Initialize overall decimation ratio
 		iDecimation = 1
@@ -265,9 +272,7 @@ class SequenceDecimatingNetwork:
 				# Compute logistic'(x) activation derivitive
 				self.oaStates[iLayer+1].raaD = (1-self.oaStates[iLayer+1].raaX)*self.oaStates[iLayer+1].raaX
 
-		# # Reshape as patterns, samples, features
-		# raaaY = numpy.reshape(numpy.copy(self.oaStates[self.iLayers].raaX),(iPatterns,iInputLayerSamples/iDecimation,-1))
-
+		# Reshape as patterns, samples, features
 		return(self.oaStates[self.iLayers].raaX, iDecimation)
 
 	def ComputeOutputsGPU(self, raaX, bComputeDerivatives):
@@ -380,7 +385,7 @@ class SequenceDecimatingNetwork:
 		raG = self.GetGradientVector()
 
 		# Return gradient and error metrics
-		return((raG, rError, rRmse))
+		return(raG)
 
 	## (raG, rError, rRmse) = ComputeGradient(self, raaaX, raaaT)
 	# Compute the gradient of error with respect to all learnable network parameters.
@@ -511,16 +516,32 @@ class SequenceDecimatingNetwork:
 			if(self.bUseGpu):
 
 				# Slice the batch
-				_raaXs = raaX.get_col_slice(i0*iPatternSamplesX,i1*iPatternSamplesX) # raaaX[i0:i1,:,:]
-				_raaTs = raaT.get_col_slice(i0*iPatternSamplesT,i1*iPatternSamplesT) # raaaT[i0:i1,:,:]
+				_raaXs = raaX.get_col_slice(i0*iPatternSamplesX,i1*iPatternSamplesX)
+				_raaTs = raaT.get_col_slice(i0*iPatternSamplesT,i1*iPatternSamplesT)
 				(_raaYs, iDecimation) = self.ComputeOutputsGPU(_raaXs, bComputeDerivatives=True)
+				raaE = _raaYs.copy()
+				raaE.subtract(_raaTs)
+
+				# FFF
+				#rError=0
+				#rRmse = 0
+
+				# Compute the gradient
+				#(raG, rError, rRmse) = self.ComputeGradient(raaaXs, raaaTs)
+				raG = self.ComputeGradientGPU(raaE)
+
 				# # Flatten the network outputs and targets to simplify error metrics
 				raY = _raaYs.asarray().flatten()
 				raT = _raaTs.asarray().flatten()
 			else:
-				_raaXs = raaX[:,i0*iPatternSamplesX:i1*iPatternSamplesX]
-				_raaTs = raaT[:,i0*iPatternSamplesT:i1*iPatternSamplesT]
+
+				_raaXs = raaX[i0*iPatternSamplesX:i1*iPatternSamplesX,:]
+				_raaTs = raaT[i0*iPatternSamplesT:i1*iPatternSamplesT,:]
+
 				(_raaYs, iDecimation) = self.ComputeOutputsCPU(_raaXs, bComputeDerivatives=True)
+				raaE = _raaYs-_raaTs
+				raG = self.ComputeGradientCPU(raaE)
+
 				raY = _raaYs.flatten()
 				raT = _raaTs.flatten()
 
@@ -570,16 +591,16 @@ class SequenceDecimatingNetwork:
 			#raaE.shape = self.oaStates[self.iLayers].raaX.shape[1],self.oaStates[self.iLayers].raaX.shape[0]
 			#raaE = cudamat.CUDAMatrix(raaE.T)
 
-			raaE = _raaYs.copy()
-			raaE.subtract(_raaTs)
+			# raaE = _raaYs.copy()
+			# raaE.subtract(_raaTs)
 
-			# FFF
-			#rError=0
-			#rRmse = 0
+			# # FFF
+			# #rError=0
+			# #rRmse = 0
 
-			# Compute the gradient
-			#(raG, rError, rRmse) = self.ComputeGradient(raaaXs, raaaTs)
-			raG = self.ComputeGradient(raaE)
+			# # Compute the gradient
+			# #(raG, rError, rRmse) = self.ComputeGradient(raaaXs, raaaTs)
+			# raG = self.ComputeGradient(raaE)
 
 			# If progress callback specified...
 			if(fProgress):
@@ -600,7 +621,7 @@ class SequenceDecimatingNetwork:
 			self.SetWeightVector(raW)
 
 			# If we've reached the end of the input array...
-			if(i0==raaaX.shape[0]):
+			if(i0==iPatternsX):
 
 				# Wrap to the beginning
 				i0 = 0
@@ -788,7 +809,7 @@ def TestTrain():
 	iPatterns = 1000
 
 	# Integer value to change network scale
-	iMagnify = 100
+	iMagnify = 50
 
 	# Specify the scale of random initialization parameters
 	rScale = 0.001
@@ -824,4 +845,4 @@ def TestTrain():
 	o1.Train(raaaX, raaaT,  1000, 0.01, 0.0, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
 	o1.Train(raaaX, raaaT, 10000, 0.01, 0.9, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
 
-TestGradient()
+TestTrain()
