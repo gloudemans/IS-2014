@@ -966,4 +966,4 @@ def Test(sSrc):
 
     print("rRmse={:.6f}, rE={:.6f}".format(rRmse,rE))
 
-Test("MNIST.pkl")
+# Test("MNIST.pkl")

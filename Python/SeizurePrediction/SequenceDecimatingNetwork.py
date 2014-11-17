@@ -29,6 +29,50 @@ except ImportError:
 # * TestGradient - Test the analytical gradient computation by comparison with the numerical gradient computation
 # * TestTrain - Test training by training one network to mimic another randomly defined network
 
+## Layer
+# This contains the parameters that descibe a network layer.
+
+class Layer:
+
+	## Layer(self, iDecimation, raaW, raB)
+	#
+	# * iDecimation - decimation ratio for this layer
+	# * raaW[iInputs, iOutputs] - specifies the connection weight matrix for this layer  
+	# * raB[iOutputs] - specifies the bias vector for this layer
+
+	def __init__(self, iDecimation, raaW, raB):
+
+		# Number of input samples per output summary			
+		self.iDecimation = iDecimation
+
+		# Connection weights from input to output
+		self.raaW = raaW			
+
+		# Biases for each output
+		self.raB  = raB
+
+## State
+# State variables used during output computation and
+# gradient computation for a layer.
+
+class State:
+
+	## State(self)
+
+	def __init__(self):
+
+		# Layer inputs [iSamples, iInputs]		
+		self.raaX = []
+
+		# Layer derivatives [iSamples, iInputs]
+		self.raaD = []
+
+		# Weight gradients [iInputs, iOutputs]
+		self.raaWg = []
+
+		# Bias gradients [iOutpus]
+		self.raaBg = []	
+
 class SequenceDecimatingNetwork:
 
 	# Small offset constant to prevent log underflows when computing cross entropy 
@@ -36,50 +80,6 @@ class SequenceDecimatingNetwork:
 
 	# Set the batch size
 	iBatch  = 100
-
-	## Layer
-	# This contains the parameters that descibe a network layer.
-
-	class Layer:
-
-		## Layer(self, iDecimation, raaW, raB)
-		#
-		# * iDecimation - decimation ratio for this layer
-		# * raaW[iInputs, iOutputs] - specifies the connection weight matrix for this layer  
-		# * raB[iOutputs] - specifies the bias vector for this layer
-
-		def __init__(self, iDecimation, raaW, raB):
-
-			# Number of input samples per output summary			
-			self.iDecimation = iDecimation
-
-			# Connection weights from input to output
-			self.raaW = raaW			
-
-			# Biases for each output
-			self.raB  = raB
-
-	## State
-	# State variables used during output computation and
-	# gradient computation for a layer.
-
-	class State:
-
-		## State(self)
-
-		def __init__(self):
-
-			# Layer inputs [iSamples, iInputs]		
-			self.raaX = []
-
-			# Layer derivatives [iSamples, iInputs]
-			self.raaD = []
-
-			# Weight gradients [iInputs, iOutputs]
-			self.raaWg = []
-
-			# Bias gradients [iOutpus]
-			self.raaBg = []	
 
 	## SequenceDecimatingNetwork(self, oaLayers)
 	# Construct a new SequenceDecimatingNetwork using the specified list
@@ -123,10 +123,10 @@ class SequenceDecimatingNetwork:
 			self.iBiases  += self.oaLayers[iLayer].raB.size
 
 			# Create a state 
-			self.oaStates.append(SequenceDecimatingNetwork.State())
+			self.oaStates.append(State())
 
 		# Need an extra state for the network output
-		self.oaStates.append(SequenceDecimatingNetwork.State())
+		self.oaStates.append(State())
 
 		if(self.bUseGpu):
 
@@ -703,10 +703,10 @@ def TestGradient():
 	raaaT = numpy.random.randn(iPatterns,1,2)*rScale
 
 	# Create layer 0 with random weights and biases
-	oL0 = SequenceDecimatingNetwork.Layer(3, numpy.random.randn(9,4)*rScale, numpy.random.randn(4)*rScale)
+	oL0 = Layer(3, numpy.random.randn(9,4)*rScale, numpy.random.randn(4)*rScale)
 
 	# Create layer 1 with random weights and biases
-	oL1 = SequenceDecimatingNetwork.Layer(2, numpy.random.randn(8,2)*rScale, numpy.random.randn(2)*rScale)
+	oL1 = Layer(2, numpy.random.randn(8,2)*rScale, numpy.random.randn(2)*rScale)
 
 	# Create object
 	o = SequenceDecimatingNetwork([oL0,oL1])
@@ -739,19 +739,19 @@ def TestTrain():
 	rScale = 0.01
 
 	# Create layer 0 with random weights and biases
-	oL0 = SequenceDecimatingNetwork.Layer(3, numpy.random.randn(9*iMagnify,4*iMagnify)*rScale, numpy.random.randn(4*iMagnify)*rScale)
+	oL0 = Layer(3, numpy.random.randn(9*iMagnify,4*iMagnify)*rScale, numpy.random.randn(4*iMagnify)*rScale)
 
 	# Create layer 1 with random weights and biases
-	oL1 = SequenceDecimatingNetwork.Layer(2, numpy.random.randn(8*iMagnify,2*iMagnify)*rScale, numpy.random.randn(2*iMagnify)*rScale)
+	oL1 = Layer(2, numpy.random.randn(8*iMagnify,2*iMagnify)*rScale, numpy.random.randn(2*iMagnify)*rScale)
 
 	# Create object
 	o0 = SequenceDecimatingNetwork([oL0, oL1])
 
 	# Create layer 0 with random weights and biases
-	oL0 = SequenceDecimatingNetwork.Layer(3, numpy.random.randn(9*iMagnify,4*iMagnify)*rScale, numpy.random.randn(4*iMagnify)*rScale)
+	oL0 = Layer(3, numpy.random.randn(9*iMagnify,4*iMagnify)*rScale, numpy.random.randn(4*iMagnify)*rScale)
 
 	# Create layer 1 with random weights and biases
-	oL1 = SequenceDecimatingNetwork.Layer(2, numpy.random.randn(8*iMagnify,2*iMagnify)*rScale, numpy.random.randn(2*iMagnify)*rScale)
+	oL1 = Layer(2, numpy.random.randn(8*iMagnify,2*iMagnify)*rScale, numpy.random.randn(2*iMagnify)*rScale)
 
 	# Create object
 	o1 = SequenceDecimatingNetwork([oL0, oL1])
@@ -769,4 +769,4 @@ def TestTrain():
 	o1.Train(raaaX, raaaT,  1000, 0.01, 0.5, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
 	o1.Train(raaaX, raaaT, 10000, 0.01, 0.9, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
 
-TestTrain()
+#TestGradient()

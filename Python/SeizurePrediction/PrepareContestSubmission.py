@@ -4,7 +4,7 @@ import scipy.io # for loadmat
 import scipy.signal # for detrend
 import numpy
 import pickle
-import TemporalHierarchy
+import RbmStack
 import SequenceDecimatingNetwork
 
 # Arrange the .mat format data files distributed by Kaggle into the following
@@ -45,20 +45,95 @@ def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2):
         PreprocessMatFiles(sPatientPath, sRatePath, rSampleFrequency)
 
         # Train autoencoder using the specified geometry
-        # TrainDecimatingAutoencoder(sRatePath)
+        TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout)
 
+        # Train classifier using the specified geometry
         TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout)
 
-# #
-# def TrainDecimatingAutoencoder(sRatePath):
-# # For each network layer
-# #   Construct a pile of training patterns using all prior layers
-# #   Train the layer
-# #   Save the layer parameters
-# # 
-# # 
+def GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, lT0, lT1, oaLayers):
+
+    # Number of patterns to take from each file
+    iT0 = iPatterns/2
+    iT1 = iPatterns-iT0
 
 
+
+    l = 0
+    i0 = 0
+    for k in range(len(lT0)):
+        sFile = lT0[k]+'.pkl'
+        (raaData, rFrequency, sClass) = pickle.load( open(os.path.join(sRatePath,sFile),'rb') )
+        (iSamples,iSensors) = raaData.shape
+
+        while(i0<k*iT0/len(lT0)):
+
+            iOffset = iSamples-iTotalDecimation
+            raaX[l,:] = raaData[iOffset:iOffset+iTotalDecimation,:].flatten()
+            i0 += 1
+            l += 1
+
+        print(i0, l)
+
+
+    xx
+
+    return(raaX)
+
+def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout):
+
+    iEpochs   =   20
+    iPatterns = 1000
+
+    # Create training options
+    oOptions = RbmStack.Options(iEpochs)
+
+    # Load training shuffle
+    (lT0, lT1, lV0, lV1, lTest) = LoadTrainingShuffle(sShufflePath, rHoldout)
+
+    # Initialize total decimation ratio
+    iTotalDecimation = 1
+
+    # Create a list to store sequence decimation layers
+    oaLayers = []; 
+
+    iV = iSensors
+
+    # For each network layer...
+    for iLayer in range(len(tlGeometry)):
+
+        # Get decimation and hidden unit count for this layer
+        (iDecimation, iH) = tlGeometry[iLayer] 
+
+        # Track total decimation ratio
+        iTotalDecimation *= iDecimation
+
+        # Decimate input samples
+        iV *= iDecimation
+
+        # Create a single layer Rbm with the correct geometry
+        oRbm = RbmStack.RbmStack([RbmStack.Layer(iV,iH)])
+
+        # Generate training patterns
+        raaX = GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, lT0, lT1, oaLayers)
+
+        # Train the autoencoder
+        oRbm.TrainAutoencoder(raaX, oOptions)
+
+        # Add the new weights
+        oaLayers.append(SequenceDecimatingNetwork.Layer(iDecimation, oRbm.oaLayer[0].raaW, oRbm.oaLayer[0].raH))
+
+        # Hidden outputs are next layer inputs
+        iV = iH
+
+    oSequenceDecimatingNetwork = SequenceDecimatingNetwork.SequenceDecimatingNetwork(oaLayers)
+
+    # Get name for the model
+    sModelName = GetModelName(sRatePath, iSensors, tlGeometry)
+
+    # Load it
+    f = open(sModelName,"wb")
+    oModel = pickle.dump(oSequenceDecimatingNetwork, f)
+    f.close()
 
 # Get name for the model
 def GetModelName(sRatePath, iSensors, tlGeometry):
@@ -72,34 +147,48 @@ def GetModelName(sRatePath, iSensors, tlGeometry):
 
     return(os.path.join(sRatePath,sName))
 
+def LoadTrainingShuffle(sSrc, rHoldout):
+
+    f = open(sSrc,'rt')
+    l = f.read().split('\n')
+    f.close()
+
+    # We want to make sure that both the training and validation sets have preictal samples
+
+    lTest   = [s for s in l if('test'       in s)]
+    lTrain0 = [s for s in l if('interictal' in s)]
+    lTrain1 = [s for s in l if('preictal'   in s)]
+
+    iSplit0 = round(len(lTrain0)*rHoldout)
+    iSplit1 = round(len(lTrain1)*rHoldout)
+
+    lV0 = lTrain0[:iSplit0]
+    lV1 = lTrain1[:iSplit1]
+    lT0 = lTrain0[iSplit0:]
+    lT1 = lTrain1[iSplit1:]
+
+    return(lT0, lT1, lV0, lV1, lTest)
+
+def LoadFiles(sSrc, lFiles):
+
+    raaaData = None;
+
+    iFiles = len(lFiles)
+    for k in range(iFiles):
+        sFile = lFiles[k]+'.pkl'
+        (raaData, rFrequency, sClass) = pickle.load( open(os.path.join(sSrc,sFile),'rb') )
+        if(raaaData==None):
+            raaaData = numpy.empty((iFiles, raaData.shape[0], raaData.shape[1]))
+        raaaData[k,:,:] =  raaData;
+
+    return(raaaData)
+
 def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout=0.2, iBatches=10, iBatchFiles=1000, iBatchPatterns=1000):
 
     rWeightInitScale = 0.01
     rRate = 0.01
     rMomentum = 0.5
     rWeightDecay = 0.0001
-
-    def LoadTrainingShuffle(sSrc, rHoldout):
-
-        f = open(sSrc,'rt')
-        l = f.read().split('\n')
-        f.close()
-
-        # We want to make sure that both the training and validation sets have preictal samples
-
-        lTest   = [s for s in l if('test'       in s)]
-        lTrain0 = [s for s in l if('interictal' in s)]
-        lTrain1 = [s for s in l if('preictal'   in s)]
-
-        iSplit0 = round(len(lTrain0)*rHoldout)
-        iSplit1 = round(len(lTrain1)*rHoldout)
-
-        lV0 = lTrain0[:iSplit0]
-        lV1 = lTrain1[:iSplit1]
-        lT0 = lTrain0[iSplit0:]
-        lT1 = lTrain1[iSplit1:]
-
-        return(lT0, lT1, lV0, lV1, lTest)
 
     def CreateModel(sModelName, iSensors, tlGeometry, rWeightInitScale):
 
@@ -121,7 +210,7 @@ def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout=0.2,
             raB  = numpy.random.randn(iH)*rWeightInitScale
 
             # Construct a layer
-            oLayer = SequenceDecimatingNetwork.SequenceDecimatingNetwork.Layer(iDecimation, raaW, raB)
+            oLayer = SequenceDecimatingNetwork.Layer(iDecimation, raaW, raB)
 
             # Add it to the list of layers
             oaLayers.append(oLayer) 
@@ -130,20 +219,6 @@ def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout=0.2,
         oModel = SequenceDecimatingNetwork.SequenceDecimatingNetwork(oaLayers)
 
         return(oModel)
-
-    def LoadFiles(sSrc, lFiles):
-
-        raaaData = None;
-
-        iFiles = len(lFiles)
-        for k in range(iFiles):
-            sFile = lFiles[k]+'.pkl'
-            (raaData, rFrequency, sClass) = pickle.load( open(os.path.join(sSrc,sFile),'rb') )
-            if(raaaData==None):
-                raaaData = numpy.empty((iFiles, raaData.shape[0], raaData.shape[1]))
-            raaaData[k,:,:] =  raaData;
-
-        return(raaaData)
 
     # Get name for the model
     sModelName = GetModelName(sRatePath, iSensors, tlGeometry)
