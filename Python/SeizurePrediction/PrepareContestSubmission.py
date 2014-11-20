@@ -50,6 +50,29 @@ def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2):
         # Train classifier using the specified geometry
         TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout)
 
+    # Read file into list
+    fOut = open(os.path.join(sDatasetPath,"Upload.csv"),'wt')
+    fOut.write("clip,preictal\n".format())
+
+    # For each patient...
+    for (sPatient,iSensors) in lPatients:
+
+        # Path to patient data
+        sPatientPath = os.path.join(sDatasetPath,sPatient)
+
+        # Path to sample rate directory
+        sRatePath = os.path.join(sPatientPath, "{:d}Hz".format(round(rSampleFrequency)),"Test.csv")
+
+        # Read file into list
+        f = open(sRatePath,'rt')
+        l = f.read()
+        f.close()
+
+        # Write to upload file
+        fOut.write(l)
+
+    fOut.close()
+
 def GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, lT0, lT1, oaLayers):
 
     iT0 = round(iPatterns/2)
