@@ -52,36 +52,82 @@ def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2):
 
 def GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, lT0, lT1, oaLayers):
 
-    # Number of patterns to take from each file
-    iT0 = iPatterns/2
-    iT1 = iPatterns-iT0
+    iT0 = round(iPatterns/2)
+    iT1 = iPatterns - iT0
 
+    # Create an array to hold the output patterns
+    raaaX = numpy.zeros((iPatterns, iTotalDecimation, iSensors))
 
+    # Get total file count
+    iFiles = len(lT0)+len(lT1)
 
-    l = 0
-    i0 = 0
+    ia = numpy.random.permutation(iPatterns)
+
+    iPattern  = 0
+
+    # For each file...
     for k in range(len(lT0)):
+
+        # Get filename
         sFile = lT0[k]+'.pkl'
+
+        # Load the data
         (raaData, rFrequency, sClass) = pickle.load( open(os.path.join(sRatePath,sFile),'rb') )
+
+        # Measure the data
         (iSamples,iSensors) = raaData.shape
 
-        while(i0<k*iT0/len(lT0)):
+        # Choose random offsets
+        while(iPattern<(k+1)*iT0/len(lT0)):
 
-            iOffset = iSamples-iTotalDecimation
-            raaX[l,:] = raaData[iOffset:iOffset+iTotalDecimation,:].flatten()
-            i0 += 1
-            l += 1
+            # Compute a random offset
+            iOffset = random.randrange(iSamples-iTotalDecimation)
 
-        print(i0, l)
+            # Save this pattern
+            raaaX[ia[iPattern],:,:] = raaData[iOffset:iOffset+iTotalDecimation,:]
+
+            # Next pattern
+            iPattern += 1
+
+    # For each file...
+    for k in range(len(lT1)):
+
+        # Get filename
+        sFile = lT1[k]+'.pkl'
+
+        # Load the data
+        (raaData, rFrequency, sClass) = pickle.load( open(os.path.join(sRatePath,sFile),'rb') )
+
+        # Measure the data
+        (iSamples,iSensors) = raaData.shape
+
+        # Choose random offsets
+        while(iPattern<(k+1)*iT1/len(lT1)+iT0):
+
+            # Compute a random offset
+            iOffset = random.randrange(iSamples-iTotalDecimation)
+
+            # Save this pattern
+            raaaX[ia[iPattern],:,:] = raaData[iOffset:iOffset+iTotalDecimation,:]
+
+            # Next pattern
+            iPattern += 1
 
 
-    xx
 
-    return(raaX)
+    oSdn = SequenceDecimatingNetwork.SequenceDecimatingNetwork(oaLayers)
+
+    raaaY = oSdn.ComputeOutputs(raaaX)
+
+    (iP,iSamples,iSensors) = raaaY.shape
+
+    raaY = raaaY.reshape(iP, iSamples*iSensors)
+
+    return(raaY)
 
 def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout):
 
-    iEpochs   =   20
+    iEpochs   =    5
     iPatterns = 1000
 
     # Create training options
