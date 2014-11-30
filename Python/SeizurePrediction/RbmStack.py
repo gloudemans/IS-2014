@@ -47,7 +47,7 @@ class Layer:
 class Options:
 
     # Default training parameters callback function
-    def fTrainingParameters(iLayer, iEpoch, rRate=0.05, bSample=False, rDropV=0, rDropH=0, rDecay=0.9998):
+    def fTrainingParameters(iLayer, iEpoch, rRate=0.1, bSample=True, rDropV=0, rDropH=0, rDecay=0.9998):
 
         # If first five epochs...
         if(iEpoch<5):
@@ -92,11 +92,7 @@ class RbmStack:
         self.bUseGpu = bUseGpu and bCudamatLoaded
 
         # Number of samples per training batch
-        self.iBatchSamples = 100
-        
-        # Normalize the dropout gradient by the number of weight updates
-        # rather than the number of training samples.
-        self.bNormalizeDropoutGradient = False
+        self.iBatchSamples = 100  
                           
     ## TrainAutoencoder
     # Perform greedy pre-training of the network using the specified
@@ -241,6 +237,13 @@ class RbmStack:
                     # Scale all weights uniformly
                     raaDiff = ( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) )*rScale
 
+                    # Update the weight delta array using the current momentum and
+                    # learning rate
+                    raaDelta = raaDelta*rMomentum + raaDiff*rRate
+
+                    # Update the weights
+                    raaW = raaW + raaDelta
+
                     # Compute bias gradients
                     raDiffV = numpy.sum(raaV0-raaV2,axis=0)*rScale
                     raDiffH = numpy.sum(raaH1-raaH3,axis=0)*rScale
@@ -249,17 +252,10 @@ class RbmStack:
                     raV += raDiffV*rRate
                     raH += raDiffH*rRate
 
-                    # Update the weight delta array using the current momentum and
-                    # learning rate
-                    raaDelta = raaDelta*rMomentum + raaDiff*rRate
-
                     # Apply weight decay
                     raaW *= rDecay
                     raV  *= rDecay
                     raH  *= rDecay
-
-                    # Update the weights
-                    raaW = raaW + raaDelta
                     
                     # Advance to the next minibatch
                     iIndex = iIndex + iBatch
@@ -338,7 +334,7 @@ class RbmStack:
             for iEpoch in range(oOptions.iEpochs):
 
                 # Get short references to epoch parameters
-                (rRate,rMomentum,rDropV,rDropH,bSample) = oOptions.fTrainingParameters(iLayer,iEpoch)
+                (rRate, rMomentum, rDropV, rDropH, bSample, rDecay) = oOptions.fTrainingParameters(iLayer,iEpoch)
 
                 # Clear the sample index
                 iIndex   = 0
@@ -417,51 +413,14 @@ class RbmStack:
                         # Clear dropped states
                         raaH3.mult(baaH)
 
-                    # Scale factor to average this batch
+                    # Scale factor to average the gradient estimates
                     rScale = 1/iBatch
-                    
-                    # If normalizing the dropout gradient by the number
-                    # of weight updates rather the number of batch
-                    # samples.
-                    if (self.bNormalizeDropoutGradient):
-                        
-                        # If no visible layer dropout...
-                        if (not rDropV):
-                            
-                            # Construct a null dropout matrix
-                            baaV.assign(1)
-                        
-                        # If no hidden layer dropout...
-                        if (not rDropH):
-                            
-                            # Construct a null dropout matrix 
-                            baaH.assign(1)   
-                        
-                        # Compute normalizer matrix
-                        #raaN = 1./(double(~baaV).T*(~baaH))
-                        cudamat.dot(baaV.T,baaH,raaN)
-                        raaN.reciprocal()
-
-                        # Compute the average difference between positive phase 
-                        # up(0,1) and negative phase up(2,3) correlations
-                        # raaDiff = numpy.multiply( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) , raaN)
-                        cudamat.dot(raaV0.T,raaH1,raaDiff)
-                        raaDiff.subtract_dot(raaV2.T,raaH3)
-                        raaDiff.mult(raaN)
-
-                    else:
-                        
-                        # Scale all weights uniformly
-                        #raaDiff = ( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) )*rScale 
-                        cudamat.dot(raaV0.T,raaH1,raaDiff)
-                        raaDiff.subtract_dot(raaV2.T,raaH3)
-                        raaDiff.mult(rScale)
-
-                    # Compute bias gradients
-                    #raDiffV = numpy.sum(raaV0-raaV2,axis=0)*rScale              
-                    #raDiffH = numpy.sum(raaH1-raaH3,axis=0)*rScale
-                    raaV0.sum(axis=0,mult=rScale).subtract(raaV2.sum(axis=0,mult=rScale),target=raDiffV)
-                    raaH1.sum(axis=0,mult=rScale).subtract(raaH3.sum(axis=0,mult=rScale),target=raDiffH)
+                                           
+                    # Scale all weights uniformly
+                    #raaDiff = ( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) )*rScale 
+                    cudamat.dot(raaV0.T,raaH1,raaDiff)
+                    raaDiff.subtract_dot(raaV2.T,raaH3)
+                    raaDiff.mult(rScale)
 
                     # Update the weight delta array using the current momentum and
                     # learning rate
@@ -473,7 +432,24 @@ class RbmStack:
                     # Updated the weights
                     #self.oaLayer[iLayer].raaW = self.oaLayer[iLayer].raaW + raaDelta
                     raaW.add(raaDelta)
-                    
+
+                    # Compute bias gradients
+                    #raDiffV = numpy.sum(raaV0-raaV2,axis=0)*rScale              
+                    #raDiffH = numpy.sum(raaH1-raaH3,axis=0)*rScale
+                    raaV0.sum(axis=0,mult=rScale).subtract(raaV2.sum(axis=0,mult=rScale),target=raDiffV)
+                    raaH1.sum(axis=0,mult=rScale).subtract(raaH3.sum(axis=0,mult=rScale),target=raDiffH)
+
+                    # Update the biases
+                    #raV += raDiffV*rRate
+                    #raH += raDiffH*rRate
+                    rV.add_mult(raDiffV, rRate)
+                    rH.add_mult(raDiffH, rRate)
+
+                    # Apply weight decay
+                    raaW.mult(rDecay)
+                    raV.mult(rDecay)
+                    raH.mult(rDecay)
+
                     # Advance to the next minibatch
                     iIndex = iIndex + iBatch
 
@@ -920,7 +896,7 @@ def Test(sSrc):
     import pandas
 
     # Specify epochs
-    iEpochs = 10
+    iEpochs = 30
 
     # Set initial weight variance
     rInitialWeightVariance = 0.1
@@ -947,4 +923,4 @@ def Test(sSrc):
 
     print("rRmse={:.6f}, rE={:.6f}".format(rRmse,rE))
 
-# Test("MNIST.pkl")
+Test("MNIST.pkl")
