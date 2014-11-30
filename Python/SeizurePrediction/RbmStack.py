@@ -47,28 +47,18 @@ class Layer:
 class Options:
 
     # Default training parameters callback function
-    def fTrainingParameters(iLayer, iEpoch):
-
-        # Default learning rate
-        rRate = 0.1
+    def fTrainingParameters(iLayer, iEpoch, rRate=0.1, bSample=False, rDropV=0, rDropH=0):
 
         # If first five epochs...
         if(iEpoch<5):
 
             # Use less momentum
             rMomentum = 0.5
+
         else:
+
             # Use more momentum
             rMomentum = 0.9
-
-        # No visible layer dropout
-        rDropV  = 0
-
-        # No hidden layer dropout
-        rDropH  = 0
-
-        # No stochastic sampling of the hidden layer
-        bSample = 1
 
         # Return training parameters
         return(rRate, rMomentum, rDropV, rDropH, bSample)

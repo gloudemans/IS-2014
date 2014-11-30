@@ -7,6 +7,8 @@ import pickle
 import RbmStack
 import SequenceDecimatingNetwork
 
+import matplotlib.pyplot as plt
+
 # Arrange the .mat format data files distributed by Kaggle into the following
 # directory structure.
 #
@@ -17,6 +19,7 @@ import SequenceDecimatingNetwork
 # * sRoot/Dog_5
 # * sRoot/Patient_1
 # * sRoot/Patient_2
+
 
 def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2):
 
@@ -98,7 +101,7 @@ def GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, l
         (raaData, rFrequency, sClass) = pickle.load( open(os.path.join(sRatePath,sFile),'rb') )
 
         # Measure the data
-        (iSamples,iSensors) = raaData.shape
+        (iSamples, iSensors) = raaData.shape
 
         # Choose random offsets
         while(iPattern<(k+1)*iT0/len(lT0)):
@@ -150,8 +153,8 @@ def GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, l
 
 def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout):
 
-    iEpochs   =    5
-    iPatterns = 1000
+    iEpochs   =   100
+    iPatterns = 10000
 
     # Create training options
     oOptions = RbmStack.Options(iEpochs)
@@ -169,6 +172,8 @@ def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rH
 
     # For each network layer...
     for iLayer in range(len(tlGeometry)):
+
+        print("\nPretraining Layer {:d}\n".format(iLayer))
 
         # Get decimation and hidden unit count for this layer
         (iDecimation, iH) = tlGeometry[iLayer] 
@@ -199,7 +204,7 @@ def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rH
     # Get name for the model
     sModelName = GetModelName(sRatePath, iSensors, tlGeometry)
 
-    # Load it
+    # Save it
     f = open(sModelName,"wb")
     oModel = pickle.dump(oSequenceDecimatingNetwork, f)
     f.close()
@@ -254,8 +259,8 @@ def LoadFiles(sSrc, lFiles):
 
 def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout=0.2, iBatches=10, iBatchFiles=1000, iBatchPatterns=1000):
 
-    rWeightInitScale = 0.01
-    rRate = 0.01
+    rWeightInitScale = 0.001
+    rRate = 0.1
     rMomentum = 0.5
     rWeightDecay = 0.0001
 
@@ -489,3 +494,4 @@ def PreprocessMatFiles(sSrc, sDst, rSampleFrequency=400, bDetrend=True):
 
 Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(8,128),(8,128),(8,1)],.2)
 #Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(8192,1)],.2) #,(8,128),(8,1)],.2)
+#Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(8,1)], 0.2)#,(8,128),(8,1)],.2)
