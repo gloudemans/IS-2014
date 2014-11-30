@@ -47,7 +47,7 @@ class Layer:
 class Options:
 
     # Default training parameters callback function
-    def fTrainingParameters(iLayer, iEpoch, rRate=0.1, bSample=False, rDropV=0, rDropH=0):
+    def fTrainingParameters(iLayer, iEpoch, rRate=0.05, bSample=False, rDropV=0, rDropH=0, rDecay=0.9998):
 
         # If first five epochs...
         if(iEpoch<5):
@@ -61,14 +61,14 @@ class Options:
             rMomentum = 0.9
 
         # Return training parameters
-        return(rRate, rMomentum, rDropV, rDropH, bSample)
+        return(rRate, rMomentum, rDropV, rDropH, bSample, rDecay)
 
     # Default epoch reporting callback function
-    def fEpochReport(iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse):
+    def fEpochReport(iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse, rWeightMagnitude, rBiasMagnitude):
 
         # Print a summary of training performence
-        print('iLayer={}, iEpoch={}, bSample={}, rDropV={}, rDropH={}, rRate={}, rMomentum={}, rRmse={}'.format(
-            iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse))
+        print('iLayer={:d}, iEpoch={:4d}, bSample={:1d}, rDropV={:.2f}, rDropH={:.2f}, rRate={:.4f}, rMomentum={:.4f}, rRmse={:.6f}, rWeightMagnitude={:.4f}, rBiasMagnitude={:,.4f}'.format(
+            iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse, rWeightMagnitude, rBiasMagnitude))
 
     def __init__(self, iEpochs, fTrainingParameters=fTrainingParameters, fEpochReport=fEpochReport):
 
@@ -156,7 +156,7 @@ class RbmStack:
             for iEpoch in range(oOptions.iEpochs):
 
                 # Get short references to epoch parameters
-                (rRate, rMomentum, rDropV, rDropH, bSample) = oOptions.fTrainingParameters(iLayer,iEpoch)
+                (rRate, rMomentum, rDropV, rDropH, bSample, rDecay) = oOptions.fTrainingParameters(iLayer,iEpoch)
 
                 # Clear the sample index
                 iIndex   = 0
@@ -235,44 +235,28 @@ class RbmStack:
                         # Clear dropped states
                         raaH3[baaH] = 0
 
-                    # Scale factor to average this batch
+                    # Scale factor to average the gradient estimates
                     rScale = 1/iBatch
-                    
-                    # If normalizing the dropout gradient by the number of
-                    # weight updates rather the number of batch samples.
-                    if (self.bNormalizeDropoutGradient):
-                        
-                        # If no visible layer dropout...
-                        if (not rDropV):
-                            
-                            # Construct a null dropout matrix
-                            baaV[:] = True
-                        
-                        # If no hidden layer dropout...
-                        if (not rDropH):
-                            
-                            # Construct a null dropout matrix 
-                            baaH[:] = True   
-                        
-                        # Compute normalizer matrix
-                        raaN = 1./(double(~baaV).T*(~baaH))
-
-                        # Compute the average difference between positive phase 
-                        # up(0,1) and negative phase up(2,3) correlations
-                        raaDiff = numpy.multiply( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) , raaN)
-
-                    else:
-                        
-                        # Scale all weights uniformly
-                        raaDiff = ( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) )*rScale 
+     
+                    # Scale all weights uniformly
+                    raaDiff = ( numpy.dot(raaV0.T,raaH1) - numpy.dot(raaV2.T,raaH3) )*rScale
 
                     # Compute bias gradients
-                    raDiffV = numpy.sum(raaV0-raaV2,axis=0)*rScale              
+                    raDiffV = numpy.sum(raaV0-raaV2,axis=0)*rScale
                     raDiffH = numpy.sum(raaH1-raaH3,axis=0)*rScale
+
+                    # Update the biases
+                    raV += raDiffV*rRate
+                    raH += raDiffH*rRate
 
                     # Update the weight delta array using the current momentum and
                     # learning rate
                     raaDelta = raaDelta*rMomentum + raaDiff*rRate
+
+                    # Apply weight decay
+                    raaW *= rDecay
+                    raV  *= rDecay
+                    raH  *= rDecay
 
                     # Update the weights
                     raaW = raaW + raaDelta
@@ -295,8 +279,12 @@ class RbmStack:
                 # Finish rmse calculation
                 rError = rTotalE/(raaX.size)
 
+                # Compute weight and bias magnitudes
+                rWeightMagnitude = numpy.mean(numpy.abs(raaW[:]))
+                rBiasMagnitude = ( numpy.mean(numpy.abs(raV[:])) + numpy.mean(numpy.abs(raH[:])) )/2
+
                 # Report training progress
-                oOptions.fEpochReport(iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse)
+                oOptions.fEpochReport(iLayer, iEpoch, bSample, rDropV, rDropH, rRate, rMomentum, rRmse, rWeightMagnitude, rBiasMagnitude)
             
             # Current layer outputs are the next layer inputs
             raaX = raaY
@@ -934,6 +922,9 @@ def Test(sSrc):
     # Specify epochs
     iEpochs = 10
 
+    # Set initial weight variance
+    rInitialWeightVariance = 0.1
+
     # Read the MNIST dataset as a pandas.DataFrame
     df = pandas.read_pickle(sSrc)
 
@@ -941,7 +932,7 @@ def Test(sSrc):
     raaX = numpy.array(df.ix[:10000,0:783])/256.0
 
     # Create 784 x 1000 x 30 rbm layers
-    oaLayers = [Layer(raaX.shape[1],1000),Layer(1000,30)]
+    oaLayers = [Layer(raaX.shape[1],1000,rInitialWeightVariance),Layer(1000,30,rInitialWeightVariance)]
 
     # Create training options
     oOptions = Options(iEpochs)

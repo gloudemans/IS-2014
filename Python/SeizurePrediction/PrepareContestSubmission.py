@@ -153,8 +153,8 @@ def GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, l
 
 def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout):
 
-    iEpochs   =   100
-    iPatterns = 10000
+    iEpochs   =  100
+    iPatterns = 2000
 
     # Create training options
     oOptions = RbmStack.Options(iEpochs)
@@ -173,8 +173,6 @@ def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rH
     # For each network layer...
     for iLayer in range(len(tlGeometry)):
 
-        print("\nPretraining Layer {:d}\n".format(iLayer))
-
         # Get decimation and hidden unit count for this layer
         (iDecimation, iH) = tlGeometry[iLayer] 
 
@@ -186,9 +184,14 @@ def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rH
 
         # Create a single layer Rbm with the correct geometry
         oRbm = RbmStack.RbmStack([RbmStack.Layer(iV,iH)])
-
+        
         # Generate training patterns
         raaX = GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, lT0, lT1, oaLayers)
+
+        # Compute the standard deviation of training patterns
+        rStd = numpy.std(raaX[:])
+
+        print("\nPretraining Layer {:d} with standard deviation {:.4f}\n".format(iLayer, rStd))
 
         # Train the autoencoder
         oRbm.TrainAutoencoder(raaX, oOptions)
