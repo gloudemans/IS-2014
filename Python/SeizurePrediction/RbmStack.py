@@ -442,8 +442,8 @@ class RbmStack:
                     # Update the biases
                     #raV += raDiffV*rRate
                     #raH += raDiffH*rRate
-                    rV.add_mult(raDiffV, rRate)
-                    rH.add_mult(raDiffH, rRate)
+                    raV.add_mult(raDiffV, rRate)
+                    raH.add_mult(raDiffH, rRate)
 
                     # Apply weight decay
                     raaW.mult(rDecay)
