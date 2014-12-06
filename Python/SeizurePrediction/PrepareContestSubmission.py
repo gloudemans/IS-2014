@@ -20,7 +20,6 @@ import matplotlib.pyplot as plt
 # * sRoot/Patient_1
 # * sRoot/Patient_2
 
-
 def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2):
 
     # List (patients directory name, electrode count) 
@@ -139,11 +138,15 @@ def GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, l
             # Next pattern
             iPattern += 1
 
-
-
     oSdn = SequenceDecimatingNetwork.SequenceDecimatingNetwork(oaLayers)
 
     raaaY = oSdn.ComputeOutputs(raaaX)
+
+    raaaXr = oSdn.ComputeInputs(raaaY)
+
+    rE = numpy.std(raaaX[:]-raaaXr[:])
+
+    print(rE)
 
     (iP,iSamples,iSensors) = raaaY.shape
 
@@ -153,8 +156,8 @@ def GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, l
 
 def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout):
 
-    iEpochs   =  100
-    iPatterns = 2000
+    iEpochs   =    20
+    iPatterns = 20000
 
     # Create training options
     oOptions = RbmStack.Options(iEpochs)
@@ -197,7 +200,7 @@ def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rH
         oRbm.TrainAutoencoder(raaX, oOptions)
 
         # Add the new weights
-        oaLayers.append(SequenceDecimatingNetwork.Layer(iDecimation, oRbm.oaLayer[0].raaW, oRbm.oaLayer[0].raH))
+        oaLayers.append(SequenceDecimatingNetwork.Layer(iDecimation, oRbm.oaLayer[0].raaW, oRbm.oaLayer[0].raH, oRbm.oaLayer[0].raV))
 
         # Hidden outputs are next layer inputs
         iV = iH
@@ -260,11 +263,11 @@ def LoadFiles(sSrc, lFiles):
 
     return(raaaData)
 
-def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout=0.2, iBatches=10, iBatchFiles=1000, iBatchPatterns=1000):
+def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout=0.2, iBatches=10, iBatchFiles=1000, iBatchPatterns=10000):
 
     rWeightInitScale = 0.001
-    rRate = 0.1
-    rMomentum = 0.5
+    rRate = 0.01
+    rMomentum = 0.9
     rWeightDecay = 0.0001
 
     def CreateModel(sModelName, iSensors, tlGeometry, rWeightInitScale):
@@ -339,16 +342,17 @@ def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout=0.2,
         # Load training files
         raaaX = LoadFiles(sRatePath, lTrain)
         (iPatterns, iSamples, iFeatures) = raaaX.shape
-        iD = 8192
+        iD = 1
+        for (iDecimation, iH) in tlGeometry:
+            iD *= iDecimation
+
+        print("iDecimation={:d}".format(iD))
+
         raaaXt = numpy.zeros((iPatterns,iD,iFeatures))
 
         for p in range(iPatterns):
-            iOffset = 0 #numpy.random.randint(iSamples-iD)
+            iOffset = numpy.random.randint(iSamples-iD)
             raaaXt[p,:,:] = raaaX[p,iOffset:iOffset+iD,:]
-
-        rMomentum = .9
-
-        #raaaXt = raaaX[:,:256,:]
 
         # Run a training batch
         oModel.Train(raaaXt, raaaT, iBatchPatterns, rRate, rMomentum, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
@@ -393,7 +397,7 @@ def CreateSplits(sPatientPath):
 
     return(sShufflePath)
 
-def PreprocessMatFiles(sSrc, sDst, rSampleFrequency=400, bDetrend=True):
+def PreprocessMatFiles(sSrc, sDst, rSampleFrequency=400, bDetrend=False):
 
     ## 
     # Load the .mat file specified by sFile and return the
@@ -472,8 +476,12 @@ def PreprocessMatFiles(sSrc, sDst, rSampleFrequency=400, bDetrend=True):
             # If decimating...
             if iDecimationRatio > 1:
 
-                # Decimate using 8th order chebyshev IIR
-                raaData = scipy.signal.decimate(raaData, iDecimationRatio, axis=1).astype(numpy.float32)
+                # Decimate using 6th order chebyshev IIR
+                raaData = scipy.signal.decimate(raaData, iDecimationRatio, ftype='iir', n=6, axis=1).astype(numpy.float32)
+
+            if(numpy.isnan(numpy.sum(raaData))):
+
+                print("NAN detected")
 
             # If normalizing...
             if bNormalize:
@@ -495,6 +503,7 @@ def PreprocessMatFiles(sSrc, sDst, rSampleFrequency=400, bDetrend=True):
 
         print('{:4d} of {:4d} {}'.format(iFile,len(lFiles),f))
 
-Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(8,128),(8,128),(8,1)],.2)
+Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',100,[(16,128),(2,128),(2,128),(2,128),(2,1)],.2)
+#Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)],.2)
 #Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(8192,1)],.2) #,(8,128),(8,1)],.2)
 #Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(8,1)], 0.2)#,(8,128),(8,1)],.2)

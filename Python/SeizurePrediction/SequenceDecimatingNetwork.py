@@ -34,13 +34,13 @@ except ImportError:
 
 class Layer:
 
-	## Layer(self, iDecimation, raaW, raB)
+	## Layer(self, iDecimation, raaW, raH)
 	#
 	# * iDecimation - decimation ratio for this layer
 	# * raaW[iInputs, iOutputs] - specifies the connection weight matrix for this layer  
-	# * raB[iOutputs] - specifies the bias vector for this layer
+	# * raH[iOutputs] - specifies the bias vector for this layer
 
-	def __init__(self, iDecimation, raaW, raB):
+	def __init__(self, iDecimation, raaW, raH, raV=None):
 
 		# Number of input samples per output summary			
 		self.iDecimation = iDecimation
@@ -49,7 +49,10 @@ class Layer:
 		self.raaW = raaW			
 
 		# Biases for each output
-		self.raB  = raB
+		self.raH  = raH
+
+		# Biases for each input
+		self.raV  = raV
 
 ## State
 # State variables used during output computation and
@@ -120,7 +123,7 @@ class SequenceDecimatingNetwork:
 			self.iWeights += self.oaLayers[iLayer].raaW.size
 
 			# Count biases
-			self.iBiases  += self.oaLayers[iLayer].raB.size
+			self.iBiases  += self.oaLayers[iLayer].raH.size
 
 			# Create a state 
 			self.oaStates.append(State())
@@ -152,13 +155,13 @@ class SequenceDecimatingNetwork:
 			for iLayer in range(self.iLayers):
 
 				# Count weights
-				iChunk = self.oaLayers[iLayer].raB.size
+				iChunk = self.oaLayers[iLayer].raH.size
 
-				raB = cudamat.CUDAMatrix(numpy.atleast_2d(self.oaLayers[iLayer].raB).T)
-				(x,y) = raB.shape
-				self.raP.set_col_slice(iBase,iBase+iChunk,raB.reshape((1,iChunk)))
-				self.oaLayers[iLayer].raB = self.raP.get_col_slice(iBase,iBase+iChunk)
-				self.oaLayers[iLayer].raB.reshape((x,y))
+				raH = cudamat.CUDAMatrix(numpy.atleast_2d(self.oaLayers[iLayer].raH).T)
+				(x,y) = raH.shape
+				self.raP.set_col_slice(iBase,iBase+iChunk,raH.reshape((1,iChunk)))
+				self.oaLayers[iLayer].raH = self.raP.get_col_slice(iBase,iBase+iChunk)
+				self.oaLayers[iLayer].raH.reshape((x,y))
 
 				iBase += iChunk		
 
@@ -183,10 +186,10 @@ class SequenceDecimatingNetwork:
 			for iLayer in range(self.iLayers):
 
 				# Count weights
-				iChunk = self.oaLayers[iLayer].raB.size
+				iChunk = self.oaLayers[iLayer].raH.size
 
-				self.raP[iBase:iBase+iChunk] = self.oaLayers[iLayer].raB.flatten()
-				self.oaLayers[iLayer].raB = self.raP[iBase:iBase+iChunk]
+				self.raP[iBase:iBase+iChunk] = self.oaLayers[iLayer].raH.flatten()
+				self.oaLayers[iLayer].raH = self.raP[iBase:iBase+iChunk]
 
 				iBase += iChunk	
 
@@ -224,7 +227,7 @@ class SequenceDecimatingNetwork:
 
 		return(raaaY)
 
-	def ComputeOutputsCPU(self, raaX, bComputeDerivatives):
+	def ComputeOutputsCPU(self, raaX, bComputeDerivatives=False):
 
 		# Save input samples
 		self.oaStates[0].raaX  = raaX
@@ -254,7 +257,7 @@ class SequenceDecimatingNetwork:
 			for iSample in range(self.oaStates[iLayer+1].raaX.shape[0]):
 
 				# Add bias
-				self.oaStates[iLayer+1].raaX[iSample,:] += self.oaLayers[iLayer].raB
+				self.oaStates[iLayer+1].raaX[iSample,:] += self.oaLayers[iLayer].raH
 
 			# Compute logistic(x) activation
 			self.oaStates[iLayer+1].raaX = 1./(1+numpy.exp(-self.oaStates[iLayer+1].raaX))
@@ -262,11 +265,57 @@ class SequenceDecimatingNetwork:
 			# If this derivative is needed for backpropagation
 			if(bComputeDerivatives and (iLayer<self.iLayers-1)):
 
-				# Compute logistic'(x) activation derivitive
+				# Compute logistic'(x) activation derivative
 				self.oaStates[iLayer+1].raaD = (1-self.oaStates[iLayer+1].raaX)*self.oaStates[iLayer+1].raaX
 
 		# return(raaY, iDecimation)
 		return(self.oaStates[self.iLayers].raaX, iDecimation)
+
+	def ComputeInputs(self, raaaX):
+
+		# Measure the input
+		(iPatterns, iInputLayerSamples, iFeatures) = raaaX.shape
+
+		# Make 2d
+		raaX = numpy.reshape(raaaX,(iPatterns*iInputLayerSamples,iFeatures))
+
+		# Save input samples
+		raaX = self.oaStates[self.iLayers].raaX
+
+		# Initialize overall decimation ratio
+		iDecimation = 1
+
+		# For each layer...
+		for iLayer in reversed(range(self.iLayers)):
+
+			print(iLayer, raaaX.shape, self.oaLayers[iLayer].raaW.T.shape, raaX.shape) 
+
+			# Update overall sample decimation ratio
+			iDecimation *= self.oaLayers[iLayer].iDecimation
+
+			raaX = numpy.dot(raaX, self.oaLayers[iLayer].raaW.T)
+
+			# For each sample...
+			for iSample in range(raaX.shape[0]):
+
+			 	# Add bias
+				raaX[iSample,:] += self.oaLayers[iLayer].raV
+
+			# Measure layer input
+			(iSamples, iFeatures) = raaX.shape
+
+			# Compute logistic(x) activation
+			raaX = 1./(1+numpy.exp(-raaX))
+
+			# Aggregate features from multiple samples
+			iFeatures /= self.oaLayers[iLayer].iDecimation
+
+			raaX = numpy.reshape(raaX, (-1, iFeatures))
+
+		raaaX = numpy.reshape(raaX,(iPatterns,iInputLayerSamples*iDecimation,-1))
+
+		# return(raaY, iDecimation)
+		return(raaaX)
 
 	def ComputeOutputsGPU(self, raaX, bComputeDerivatives):
 
@@ -298,8 +347,8 @@ class SequenceDecimatingNetwork:
 			self.oaStates[iLayer+1].raaX = cudamat.dot(self.oaLayers[iLayer].raaW, self.oaStates[iLayer].raaX)
 
 			# For each sample...add bias
-			# 	self.oaStates[iLayer+1].raaX[iSample,:] += self.oaLayers[iLayer].raB
-			self.oaStates[iLayer+1].raaX.add_col_vec(self.oaLayers[iLayer].raB)
+			# 	self.oaStates[iLayer+1].raaX[iSample,:] += self.oaLayers[iLayer].raH
+			self.oaStates[iLayer+1].raaX.add_col_vec(self.oaLayers[iLayer].raH)
 
 			# Compute logistic(x) activation
 			# self.oaStates[iLayer+1].raaX = 1./(1+numpy.exp(-self.oaStates[iLayer+1].raaX))

@@ -47,7 +47,7 @@ class Layer:
 class Options:
 
     # Default training parameters callback function
-    def fTrainingParameters(iLayer, iEpoch, rRate=0.1, bSample=True, rDropV=0, rDropH=0, rDecay=0.9998):
+    def fTrainingParameters(iLayer, iEpoch, rRate=0.1, bSample=False, rDropV=0, rDropH=0, rDecay=0.9998):
 
         # If first five epochs...
         if(iEpoch<5):
@@ -919,8 +919,12 @@ def Test(sSrc):
     # Train using the specified options
     oRbmStack.TrainAutoencoder(raaX, oOptions)
 
+    # Compute reconstruction error
     (rRmse, rE) = oRbmStack.ComputeReconstructionError(raaX)
 
-    print("rRmse={:.6f}, rE={:.6f}".format(rRmse,rE))
+    # Compute standard deviation of the data
+    rStd = numpy.std(raaX)
 
-Test("MNIST.pkl")
+    print("rStd={:.6f}, rRmse={:.6f}, rE={:.6f}".format(rRmse,rE))
+
+#Test("MNIST.pkl")
