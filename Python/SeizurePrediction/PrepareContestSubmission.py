@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 # * sRoot/Patient_1
 # * sRoot/Patient_2
 
-def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2):
+def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2, bRetrain=False):
 
     # List (patients directory name, electrode count) 
     lPatients = [('Dog_1',16),('Dog_2',16),('Dog_3',16),('Dog_4',16),('Dog_5',15),('Patient_1',15),('Patient_2',24)]
@@ -46,8 +46,8 @@ def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2):
         # Preprocess files to desired sample rate if necesary 
         PreprocessMatFiles(sPatientPath, sRatePath, rSampleFrequency)
 
-        # Train autoencoder using the specified geometry
-        TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout)
+        # Train autoencoder using the specified geometry if necessary
+        TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout, bRetrain)
 
         # Train classifier using the specified geometry
         TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout)
@@ -154,71 +154,71 @@ def GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, l
 
     return(raaY)
 
-def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout):
+def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout, bRetrain=False):
 
     iEpochs   =    20
     iPatterns = 20000
 
-    # Create training options
-    oOptions = RbmStack.Options(iEpochs)
+     # Get name for the model
+    sModelName = GetModelName(sRatePath, iSensors, tlGeometry, "Layers")
 
-    # Load training shuffle
-    (lT0, lT1, lV0, lV1, lTest) = LoadTrainingShuffle(sShufflePath, rHoldout)
+    # If the model already exists...
+    if(bRetrain or not os.path.exists(sModelName)):
 
-    # Initialize total decimation ratio
-    iTotalDecimation = 1
+        # Create training options
+        oOptions = RbmStack.Options(iEpochs)
 
-    # Create a list to store sequence decimation layers
-    oaLayers = []; 
+        # Load training shuffle
+        (lT0, lT1, lV0, lV1, lTest) = LoadTrainingShuffle(sShufflePath, rHoldout)
 
-    iV = iSensors
+        # Initialize total decimation ratio
+        iTotalDecimation = 1
 
-    # For each network layer...
-    for iLayer in range(len(tlGeometry)):
+        # Create a list to store sequence decimation layers
+        oaLayers = []; 
 
-        # Get decimation and hidden unit count for this layer
-        (iDecimation, iH) = tlGeometry[iLayer] 
+        iV = iSensors
 
-        # Track total decimation ratio
-        iTotalDecimation *= iDecimation
+        # For each network layer...
+        for iLayer in range(len(tlGeometry)):
 
-        # Decimate input samples
-        iV *= iDecimation
+            # Get decimation and hidden unit count for this layer
+            (iDecimation, iH) = tlGeometry[iLayer] 
 
-        # Create a single layer Rbm with the correct geometry
-        oRbm = RbmStack.RbmStack([RbmStack.Layer(iV,iH)])
-        
-        # Generate training patterns
-        raaX = GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, lT0, lT1, oaLayers)
+            # Track total decimation ratio
+            iTotalDecimation *= iDecimation
 
-        # Compute the standard deviation of training patterns
-        rStd = numpy.std(raaX[:])
+            # Decimate input samples
+            iV *= iDecimation
 
-        print("\nPretraining Layer {:d} with standard deviation {:.4f}\n".format(iLayer, rStd))
+            # Create a single layer Rbm with the correct geometry
+            oRbm = RbmStack.RbmStack([RbmStack.Layer(iV,iH)])
+            
+            # Generate training patterns
+            raaX = GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, lT0, lT1, oaLayers)
 
-        # Train the autoencoder
-        oRbm.TrainAutoencoder(raaX, oOptions)
+            # Compute the standard deviation of training patterns
+            rStd = numpy.std(raaX[:])
 
-        # Add the new weights
-        oaLayers.append(SequenceDecimatingNetwork.Layer(iDecimation, oRbm.oaLayer[0].raaW, oRbm.oaLayer[0].raH, oRbm.oaLayer[0].raV))
+            print("\nPretraining Layer {:d} with standard deviation {:.4f}\n".format(iLayer, rStd))
 
-        # Hidden outputs are next layer inputs
-        iV = iH
+            # Train the autoencoder
+            oRbm.TrainAutoencoder(raaX, oOptions)
 
-    oSequenceDecimatingNetwork = SequenceDecimatingNetwork.SequenceDecimatingNetwork(oaLayers)
+            # Add the new weights
+            oaLayers.append(SequenceDecimatingNetwork.Layer(iDecimation, oRbm.oaLayer[0].raaW, oRbm.oaLayer[0].raH, oRbm.oaLayer[0].raV))
 
-    # Get name for the model
-    sModelName = GetModelName(sRatePath, iSensors, tlGeometry)
+            # Hidden outputs are next layer inputs
+            iV = iH
 
-    # Save it
-    f = open(sModelName,"wb")
-    oModel = pickle.dump(oSequenceDecimatingNetwork, f)
-    f.close()
+        # Save it
+        f = open(sModelName,"wb")
+        oModel = pickle.dump(oaLayers, f)
+        f.close()
 
 # Get name for the model
-def GetModelName(sRatePath, iSensors, tlGeometry):
+def GetModelName(sRatePath, iSensors, tlGeometry, sName):
 
-    sName = "Model";
     iFeatures = iSensors
     for (a,b) in tlGeometry:
         sName += "_{:d}x{:d}".format(a*iFeatures,b)
@@ -265,12 +265,11 @@ def LoadFiles(sSrc, lFiles):
 
 def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout=0.2, iBatches=10, iBatchFiles=1000, iBatchPatterns=10000):
 
-    rWeightInitScale = 0.001
     rRate = 0.01
     rMomentum = 0.9
     rWeightDecay = 0.0001
 
-    def CreateModel(sModelName, iSensors, tlGeometry, rWeightInitScale):
+    def CreateRandomModel(sModelName, iSensors, tlGeometry, rWeightInitScale = 0.001):
 
         # Create an empty list of layers
         oaLayers = []
@@ -301,21 +300,27 @@ def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout=0.2,
         return(oModel)
 
     # Get name for the model
-    sModelName = GetModelName(sRatePath, iSensors, tlGeometry)
+    sModelName = GetModelName(sRatePath, iSensors, tlGeometry, "Layers")
 
-    # If the model already exists...
+    # If the pretrained model exists...
     if(os.path.exists(sModelName)):
 
         # Load it
         f = open(sModelName,"rb")
-        oModel = pickle.load(f)
+
+        # Load the layer stack
+        oaLayers = pickle.load(f)
+
+        # Create a sequence decimating network using this layer stack 
+        oModel = SequenceDecimatingNetwork.SequenceDecimatingNetwork(oaLayers)
+
         f.close()
 
     # Otherwise
     else:
 
         # Create a new model
-        oModel = CreateModel(sModelName, iSensors, tlGeometry, rWeightInitScale)
+        oModel = CreateRandomModel(sModelName, iSensors, tlGeometry, rWeightInitScale)
 
     iTrainIndex = 0;
     (lT0, lT1, lV0, lV1, lTest) = LoadTrainingShuffle(sShufflePath, rHoldout)
@@ -367,7 +372,6 @@ def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout=0.2,
     for k in range(len(lTest)):
         print("{:s}.mat,{:.6f}".format(lTest[k],raY[k]),file=f)
     f.close()
-
 
 def CreateSplits(sPatientPath):
 
@@ -503,7 +507,7 @@ def PreprocessMatFiles(sSrc, sDst, rSampleFrequency=400, bDetrend=False):
 
         print('{:4d} of {:4d} {}'.format(iFile,len(lFiles),f))
 
-Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',100,[(16,128),(2,128),(2,128),(2,128),(2,1)],.2)
+Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)],.2)
 #Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)],.2)
 #Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(8192,1)],.2) #,(8,128),(8,1)],.2)
 #Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(8,1)], 0.2)#,(8,128),(8,1)],.2)
