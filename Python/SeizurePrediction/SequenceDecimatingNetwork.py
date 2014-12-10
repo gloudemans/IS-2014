@@ -1,5 +1,6 @@
 import math
 import numpy
+import copy
 try:
     import cudamat
     cudamat.init()
@@ -46,13 +47,24 @@ class Layer:
 		self.iDecimation = iDecimation
 
 		# Connection weights from input to output
-		self.raaW = raaW			
+		self.raaW = numpy.copy(raaW)
 
 		# Biases for each output
-		self.raH  = raH
+		self.raH  = numpy.copy(raH)
 
 		# Biases for each input
-		self.raV  = raV
+		self.raV  = numpy.copy(raV)
+
+	def __eq__(self, other):
+		bEqual = self.iDecimation == other.iDecimation
+		bEqual &= numpy.array_equal(self.raaW, other.raaW)
+		bEqual &= numpy.array_equal(self.raH, other.raH)
+		bEqual &= numpy.array_equal(self.raV, other.raV)
+
+		bEqual &= self.raaW.dtype == other.raaW.dtype
+		bEqual &= self.raH.dtype == other.raH.dtype
+		bEqual &= self.raV.dtype == other.raV.dtype
+		return bEqual
 
 ## State
 # State variables used during output computation and
@@ -65,16 +77,28 @@ class State:
 	def __init__(self):
 
 		# Layer inputs [iSamples, iInputs]		
-		self.raaX = []
+		self.raaX = numpy.zeros((0,0))
 
 		# Layer derivatives [iSamples, iInputs]
-		self.raaD = []
+		self.raaD = numpy.zeros((0,0))
 
 		# Weight gradients [iInputs, iOutputs]
-		self.raaWg = []
+		self.raaWg = numpy.zeros((0,0))
 
 		# Bias gradients [iOutpus]
-		self.raaBg = []	
+		self.raaBg = numpy.zeros((0,0))
+
+	def __eq__(self, other):
+		bEqual =  numpy.array_equal(self.raaX, other.raaX)
+		bEqual &= numpy.array_equal(self.raaD, other.raaD)
+		bEqual &= numpy.array_equal(self.raaWg, other.raaWg)
+		bEqual &= numpy.array_equal(self.raaBg, other.raaBg)
+
+		bEqual &= self.raaX.dtype == other.raaX.dtype
+		bEqual &= self.raaD.dtype == other.raaD.dtype		
+		bEqual &= self.raaWg.dtype == other.raaWg.dtype
+		bEqual &= self.raaBg.dtype == other.raaBg.dtype
+		return bEqual
 
 class SequenceDecimatingNetwork:
 
@@ -97,17 +121,19 @@ class SequenceDecimatingNetwork:
 
 	def __init__(self, oaLayers, bUseGpu=True):
 
-		# Layer properties
-		self.oaLayer = oaLayers
-
 		# Set the GPU flag
 		self.bUseGpu = bUseGpu and bCudamatLoaded
 
-		# Number of connection layers in the network
-		self.iLayers = len(oaLayers)
-
 		# List of connection layers
-		self.oaLayers = oaLayers
+		self.oaLayers = list(oaLayers)
+
+		# Number of connection layers in the network
+		self.iLayers = len(self.oaLayers)
+
+		for oLayer in self.oaLayers:
+			oLayer.raaW = numpy.copy(oLayer.raaW)
+			oLayer.raH = numpy.copy(oLayer.raH)
+			oLayer.raV = numpy.copy(oLayer.raV)	
 
 		# List of states
 		self.oaStates = []
@@ -192,6 +218,23 @@ class SequenceDecimatingNetwork:
 				self.oaLayers[iLayer].raH = self.raP[iBase:iBase+iChunk]
 
 				iBase += iChunk	
+
+	def __eq__(self, other):
+		bEqual  = self.bUseGpu  == other.bUseGpu
+		bEqual &= self.iLayers  == other.iLayers
+		bEqual &= self.iWeights == other.iWeights
+		bEqual &= self.iBiases  == other.iBiases
+		bEqual &= len(self.oaLayers) == len(other.oaLayers)
+		bEqual &= len(self.oaStates) == len(other.oaStates)
+		bEqual &= numpy.array_equal(self.raP, other.raP)
+
+		for iLayer in range(len(self.oaLayers)):
+			bEqual &= self.oaLayers[iLayer] == other.oaLayers[iLayer]
+
+		for iState in range(len(self.oaStates)):
+			bEqual &= self.oaStates[iState] == other.oaStates[iState]				
+
+		return bEqual
 
 	## (raaaY) = (self, raaaX, bComputeDerivatives=False)
 	# Compute network outputs from the specified network input, optionally

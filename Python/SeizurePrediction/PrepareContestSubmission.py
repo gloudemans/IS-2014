@@ -156,8 +156,8 @@ def GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, l
 
 def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout, bRetrain=False):
 
-    iEpochs   =    20
-    iPatterns = 20000
+    iEpochs   =    10
+    iPatterns = 10000
 
      # Get name for the model
     sModelName = GetModelName(sRatePath, iSensors, tlGeometry, "Layers")
@@ -211,10 +211,19 @@ def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rH
             # Hidden outputs are next layer inputs
             iV = iH
 
-        # Save it
+        # Save layers
         f = open(sModelName,"wb")
-        oModel = pickle.dump(oaLayers, f)
+        pickle.dump(oaLayers, f)
         f.close()
+
+        oModel = SequenceDecimatingNetwork.SequenceDecimatingNetwork(oaLayers)
+
+        # Save model
+        f = open(sModelName+"Sdn","wb")
+        pickle.dump(oModel, f)
+        f.close()
+
+        return(oaLayers)
 
 # Get name for the model
 def GetModelName(sRatePath, iSensors, tlGeometry, sName):
@@ -263,7 +272,7 @@ def LoadFiles(sSrc, lFiles):
 
     return(raaaData)
 
-def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout=0.2, iBatches=10, iBatchFiles=1000, iBatchPatterns=10000):
+def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, oaLayersX, rHoldout=0.2, iBatches=10, iBatchFiles=1000, iBatchPatterns=10000):
 
     rRate = 0.01
     rMomentum = 0.9
@@ -305,16 +314,22 @@ def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout=0.2,
     # If the pretrained model exists...
     if(os.path.exists(sModelName)):
 
-        # Load it
+        # Load layer stack
         f = open(sModelName,"rb")
-
-        # Load the layer stack
         oaLayers = pickle.load(f)
+        f.close()
 
         # Create a sequence decimating network using this layer stack 
         oModel = SequenceDecimatingNetwork.SequenceDecimatingNetwork(oaLayers)
 
+        # Load model
+        f = open(sModelName+"Sdn","rb")
+        oSdn = pickle.load(f)
         f.close()
+
+        print(oModel==oSdn)
+
+        oModel = oSdn
 
     # Otherwise
     else:
@@ -507,7 +522,7 @@ def PreprocessMatFiles(sSrc, sDst, rSampleFrequency=400, bDetrend=False):
 
         print('{:4d} of {:4d} {}'.format(iFile,len(lFiles),f))
 
-Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)],.2)
+Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)],.2,True)
 #Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)],.2)
 #Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(8192,1)],.2) #,(8,128),(8,1)],.2)
 #Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(8,1)], 0.2)#,(8,128),(8,1)],.2)
