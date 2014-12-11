@@ -156,8 +156,8 @@ def GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, l
 
 def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout, bRetrain=False):
 
-    iEpochs   =    10
-    iPatterns = 10000
+    iEpochs   =    20
+    iPatterns = 20000
 
      # Get name for the model
     sModelName = GetModelName(sRatePath, iSensors, tlGeometry, "Layers")
@@ -197,6 +197,8 @@ def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rH
             # Generate training patterns
             raaX = GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, lT0, lT1, oaLayers)
 
+            print(iPatterns, iTotalDecimation)
+
             # Compute the standard deviation of training patterns
             rStd = numpy.std(raaX[:])
 
@@ -210,6 +212,9 @@ def TrainDecimatingAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rH
 
             # Hidden outputs are next layer inputs
             iV = iH
+
+        # Generate training patterns
+        raaX = GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, lT0, lT1, oaLayers)
 
         # Save layers
         f = open(sModelName,"wb")
@@ -275,8 +280,9 @@ def LoadFiles(sSrc, lFiles):
 def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, oaLayersX, rHoldout=0.2, iBatches=10, iBatchFiles=1000, iBatchPatterns=10000):
 
     rRate = 0.01
-    rMomentum = 0.9
+    rMomentum = 0.5
     rWeightDecay = 0.0001
+    iFinalBatches = 2
 
     def CreateRandomModel(sModelName, iSensors, tlGeometry, rWeightInitScale = 0.001):
 
@@ -351,13 +357,11 @@ def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, oaLayersX, rH
         for k in range(iBatchFiles):
             if(k % 2):
                 lTrain.append(lT0[iT0 % len(lT0)])
-                raaaT[k,0,0] = 0
                 iT0+=1
             else:
                 lTrain.append(lT1[iT1 % len(lT1)])
                 iT1+=1
-                raaaT[k,0,0] = 1
-            #raaaT[k,0,0] = 'preictal' in lTrain[k]
+            raaaT[k,0,0] = 'preictal' in lTrain[k]
 
         # Load training files
         raaaX = LoadFiles(sRatePath, lTrain)
@@ -366,7 +370,7 @@ def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, oaLayersX, rH
         for (iDecimation, iH) in tlGeometry:
             iD *= iDecimation
 
-        print("iDecimation={:d}".format(iD))
+        # print("iDecimation={:d}".format(iD))
 
         raaaXt = numpy.zeros((iPatterns,iD,iFeatures))
 
@@ -375,7 +379,19 @@ def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, oaLayersX, rH
             raaaXt[p,:,:] = raaaX[p,iOffset:iOffset+iD,:]
 
         # Run a training batch
-        oModel.Train(raaaXt, raaaT, iBatchPatterns, rRate, rMomentum, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
+        oModel.Train(raaaXt, raaaT, iBatchPatterns, rRate, rMomentum, iBatch<iFinalBatches, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
+
+    # Load train files
+    lTrain = lT0+lT1
+    raaaX = LoadFiles(sRatePath, lTrain)
+    raaaXt = raaaX[:,:iD,:]    
+    raY = numpy.squeeze(oModel.ComputeOutputs(raaaXt))
+
+    f = open(os.path.join(sRatePath,'Train.csv'),'wt')
+
+    for k in range(len(lTrain)):
+        print("{:s}.mat,{:.6f}".format(lTrain[k],raY[k]),file=f)
+    f.close()
 
     # Load test files
     raaaX = LoadFiles(sRatePath, lTest)
@@ -522,7 +538,7 @@ def PreprocessMatFiles(sSrc, sDst, rSampleFrequency=400, bDetrend=False):
 
         print('{:4d} of {:4d} {}'.format(iFile,len(lFiles),f))
 
-Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)],.2,True)
+Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,1)],.2,True)
 #Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)],.2)
 #Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(8192,1)],.2) #,(8,128),(8,1)],.2)
 #Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(8,1)], 0.2)#,(8,128),(8,1)],.2)

@@ -421,7 +421,7 @@ class SequenceDecimatingNetwork:
 	# * rError - returns cross entropy
 	# * rRmse - returns root mean square error
 
-	def ComputeGradient(self, raaaX, raaaT):
+	def ComputeGradient(self, raaaX, raaaT, bFinalLayer=False):
 
 
 		# Measure the input
@@ -440,17 +440,17 @@ class SequenceDecimatingNetwork:
 			(raaY, iDecimation) = self.ComputeOutputsGPU(raaX, bComputeDerivatives=True)
 			raaE = raaY.copy()
 			raaE.subtract(raaT)
-			raG = self.ComputeGradientGPU(raaE)
+			raG = self.ComputeGradientGPU(raaE, bFinalLayer)
 
 		else:
 
 			(raaY, iDecimation) = self.ComputeOutputsCPU(raaX, bComputeDerivatives=True)
 			raaE = raaY-raaT
-			raG = self.ComputeGradientCPU(raaE)
+			raG = self.ComputeGradientCPU(raaE, bFinalLayer)
 
 		return(raG)
 
-	def ComputeGradientCPU(self, raaE):
+	def ComputeGradientCPU(self, raaE, bFinalLayer=False):
 
 		# For each layer...
 		for iLayer in range(self.iLayers-1,-1,-1):
@@ -480,12 +480,12 @@ class SequenceDecimatingNetwork:
 				raaE = raaE*self.oaStates[iLayer].raaD		
 
 		# Get the serialized gradient vector
-		raG = self.GetGradientVector()
+		raG = self.GetGradientVector(bFinalLayer)
 
 		# Return gradient and error metrics
 		return(raG)
 
-	def ComputeGradientGPU(self, raaE):
+	def ComputeGradientGPU(self, raaE, bFinalLayer=False):
 
 		# For each layer...
 		for iLayer in range(self.iLayers-1,-1,-1):
@@ -524,7 +524,7 @@ class SequenceDecimatingNetwork:
 				raaE.mult(self.oaStates[iLayer].raaD)				
 
 		# Get the serialized gradient vector
-		raG = self.GetGradientVector()
+		raG = self.GetGradientVector(bFinalLayer)
 
 		# Return gradient and error metrics
 		# return((raG, rError, rRmse))
@@ -545,7 +545,7 @@ class SequenceDecimatingNetwork:
 	# * rMomentum - specifies the momentum to apply
 	# * fProgress - specifies the progress callback
 
-	def Train(self, raaaX, raaaT, iPatterns, rRate, rMomentum, fProgress=None):
+	def Train(self, raaaX, raaaT, iPatterns, rRate, rMomentum, bFinalLayer=False, fProgress=None):
 
 		# Clear the batch start index
 		i0 = 0
@@ -589,7 +589,7 @@ class SequenceDecimatingNetwork:
 
 				# Compute the gradient
 				#(raG, rError, rRmse) = self.ComputeGradient(raaaXs, raaaTs)
-				raG = self.ComputeGradientGPU(raaE)
+				raG = self.ComputeGradientGPU(raaE, bFinalLayer)
 
 				# # Flatten the network outputs and targets to simplify error metrics
 				raY = _raaYs.asarray().flatten()
@@ -601,7 +601,7 @@ class SequenceDecimatingNetwork:
 
 				(_raaYs, iDecimation) = self.ComputeOutputsCPU(_raaXs, bComputeDerivatives=True)
 				raaE = _raaYs-_raaTs
-				raG = self.ComputeGradientCPU(raaE)
+				raG = self.ComputeGradientCPU(raaE, bFinalLayer)
 
 				raY = _raaYs.flatten()
 				raT = _raaTs.flatten()
@@ -647,7 +647,7 @@ class SequenceDecimatingNetwork:
 	#
 	# * raG - returns error gradient
 
-	def GetGradientVector(self):
+	def GetGradientVector(self, bFinalLayer=False):
 
 		# Start with an empty array
 		raG = numpy.array([])
@@ -657,31 +657,49 @@ class SequenceDecimatingNetwork:
 
 			if(self.bUseGpu):
 
-				# Concatenate the flattened weight gradients
-				raG = numpy.concatenate((raG, self.oaStates[iLayer].raaWg.asarray().ravel()))
+				# Get flattened weight gradients
+				raChunk = self.oaStates[iLayer].raaWg.asarray().ravel()
 
 			else:
 
-				# Concatenate the flattened weight gradients
-				raG = numpy.concatenate((raG, self.oaStates[iLayer].raaWg.ravel()))
+				# Get the flattened weight gradients
+				raChunk = self.oaStates[iLayer].raaWg.ravel()
+
+			# If training the final layer only and this isn't the final layer...
+			if(bFinalLayer and (iLayer<self.iLayers-1)):
+
+				# Clear the gradient
+				raChunk[:] = 0
+
+			# Concatenate this chunk with the gradient vector
+			raG = numpy.concatenate((raG, raChunk))
 
 		# For each layer...
 		for iLayer in range(self.iLayers):
 
 			if(self.bUseGpu):
 
-				# Concatenate the flattened bias gradients
-				raG = numpy.concatenate((raG, self.oaStates[iLayer].raBg.asarray().ravel()))
+				# Get the flattened bias gradients
+				raChunk = self.oaStates[iLayer].raBg.asarray().ravel()
 
 			else:
 
-				# Concatenate the flattened bias gradients
-				raG = numpy.concatenate((raG, self.oaStates[iLayer].raBg.ravel()))
+				# Get the flattened bias gradients
+				raChunk = self.oaStates[iLayer].raBg.ravel()
+
+			# If training the final layer only and this isn't the final layer...
+			if(bFinalLayer and (iLayer<self.iLayers-1)):
+
+				# Clear the gradient
+				raChunk[:] = 0
+
+			# Concatenate this chunk with the gradient vector
+			raG = numpy.concatenate((raG, raChunk))
 
 		# Return the error gradient vector
 		return(raG)
 
-	## (raW) = GetGradientVector
+	## (raW) = GetWeightVector
 	# Get all learnable network parameters as a vector.
 	#
 	# * raW - returns parameter vector
@@ -858,7 +876,7 @@ def TestTrain():
 	raaaT = o0.ComputeOutputs(raaaX)
 
 	# Train network 1 to model network zero
-	o1.Train(raaaX, raaaT,  1000, 0.01, 0.5, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
-	o1.Train(raaaX, raaaT, 10000, 0.01, 0.9, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
+	o1.Train(raaaX, raaaT,  1000, 0.01, 0.5, False, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
+	o1.Train(raaaX, raaaT, 10000, 0.01, 0.9, False, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
 
-#TestGradient()
+#TestTrain()
