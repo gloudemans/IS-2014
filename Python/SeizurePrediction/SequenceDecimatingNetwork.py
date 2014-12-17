@@ -66,6 +66,14 @@ class Layer:
 		bEqual &= self.raV.dtype == other.raV.dtype
 		return bEqual
 
+	def hash(self):
+		rHash  = self.iDecimation
+		rHash += numpy.sum(self.raaW)
+		rHash += numpy.sum(self.raH)
+		rHash += numpy.sum(self.raV)
+
+		return rHash
+
 ## State
 # State variables used during output computation and
 # gradient computation for a layer.
@@ -99,6 +107,15 @@ class State:
 		bEqual &= self.raaWg.dtype == other.raaWg.dtype
 		bEqual &= self.raaBg.dtype == other.raaBg.dtype
 		return bEqual
+
+	def hash(self):
+
+		rHash  = numpy.sum(self.raaX[:])
+		rHash += numpy.sum(self.raaD[:])
+		rHash += numpy.sum(self.raaWg[:])
+		rHash += numpy.sum(self.raaWg[:])
+
+		return rHash
 
 class SequenceDecimatingNetwork:
 
@@ -235,6 +252,24 @@ class SequenceDecimatingNetwork:
 			bEqual &= self.oaStates[iState] == other.oaStates[iState]				
 
 		return bEqual
+
+	def hash(self):
+
+		rHash  = self.bUseGpu
+		rHash += self.iLayers
+		rHash += self.iWeights
+		rHash += self.iBiases
+		rHash += len(self.oaLayers)
+		rHash += len(self.oaStates)
+		rHash += numpy.sum(self.raP)
+
+		for iLayer in range(len(self.oaLayers)):
+			rHash += self.oaLayers[iLayer].hash()
+
+		for iState in range(len(self.oaStates)):
+			rHash += self.oaStates[iState].hash()				
+
+		return rHash
 
 	## (raaaY) = (self, raaaX, bComputeDerivatives=False)
 	# Compute network outputs from the specified network input, optionally
@@ -609,6 +644,8 @@ class SequenceDecimatingNetwork:
 			# Increment the number of patterns procressed
 			iPattern += i1-i0
 
+			#print("raG ",numpy.sum(raG))
+
 			# Advance the batch start index
 			i0 = i1
 
@@ -630,17 +667,32 @@ class SequenceDecimatingNetwork:
 			# Update the biases with no momentum
 			raDelta[self.iWeights:] = raG[self.iWeights:]*rRate
 
+			#print("raG", numpy.sum(raG))
+			#print("raW", numpy.sum(raW))
+
 			# Update the local weights
-			raW = raW - raDelta;
+			#raW = raW - raDelta
+			raW[0] += 1
+
+			#print("raW", numpy.sum(raW))
+			#print("raDelta", numpy.sum(raDelta))
 
 			# Insert updated weights into the network
 			self.SetWeightVector(raW)
+
+			for k in range(len(self.oaLayers)):
+				print(k,numpy.sum(self.oaLayers[k].raaW))
+			#print("raW", numpy.sum(raW))			
+
+			#print("raP", numpy.sum(self.raP))
 
 			# If we've reached the end of the input array...
 			if(i0==iPatternsX):
 
 				# Wrap to the beginning
 				i0 = 0
+
+			print(iPattern, self.hash())
 
 	## (raG) = GetGradientVector(self)
 	# Get the gradient of error with respect to all learnable network parameters as a vector.

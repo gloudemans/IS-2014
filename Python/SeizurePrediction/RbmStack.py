@@ -47,7 +47,7 @@ class Layer:
 class Options:
 
     # Default training parameters callback function
-    def fTrainingParameters(iLayer, iEpoch, rRate=0.1, bSample=False, rDropV=0, rDropH=0, rDecay=0.9998):
+    def fTrainingParameters(iLayer, iEpoch, rRate=0.2, bSample=False, rDropV=0, rDropH=0, rDecay=0.9998):
 
         # If first five epochs...
         if(iEpoch<5):

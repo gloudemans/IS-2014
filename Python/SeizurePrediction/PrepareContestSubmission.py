@@ -277,10 +277,10 @@ def LoadFiles(sSrc, lFiles):
 
     return(raaaData)
 
-def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, oaLayersX, rHoldout=0.2, iBatches=10, iBatchFiles=1000, iBatchPatterns=10000):
+def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, oaLayersX, rHoldout=0.2, iBatches=100, iBatchFiles=1000, iBatchPatterns=100):
 
     rRate = 0.01
-    rMomentum = 0.5
+    rMomentum = 0.9
     rWeightDecay = 0.0001
     iFinalBatches = 2
 
@@ -334,8 +334,7 @@ def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, oaLayersX, rH
         f.close()
 
         print(oModel==oSdn)
-
-        oModel = oSdn
+        print(oModel.hash(), oSdn.hash())
 
     # Otherwise
     else:
@@ -378,8 +377,12 @@ def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, oaLayersX, rH
             iOffset = numpy.random.randint(iSamples-iD)
             raaaXt[p,:,:] = raaaX[p,iOffset:iOffset+iD,:]
 
+        #print(oSdn.hash())
+        #print(oModel.hash())
+
         # Run a training batch
-        oModel.Train(raaaXt, raaaT, iBatchPatterns, rRate, rMomentum, iBatch<iFinalBatches, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
+        oSdn.Train(raaaXt, raaaT, iBatchPatterns, rRate, rMomentum, iBatch<iFinalBatches, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
+        #oModel.Train(raaaXt, raaaT, iBatchPatterns, rRate, rMomentum, iBatch<iFinalBatches, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
 
     # Load train files
     lTrain = lT0+lT1
@@ -538,7 +541,7 @@ def PreprocessMatFiles(sSrc, sDst, rSampleFrequency=400, bDetrend=False):
 
         print('{:4d} of {:4d} {}'.format(iFile,len(lFiles),f))
 
-Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,1)],.2,True)
+Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)],.2,False)
 #Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)],.2)
 #Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(8192,1)],.2) #,(8,128),(8,1)],.2)
 #Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(8,1)], 0.2)#,(8,128),(8,1)],.2)
