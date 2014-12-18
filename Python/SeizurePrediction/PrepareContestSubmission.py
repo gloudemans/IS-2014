@@ -30,7 +30,7 @@ import matplotlib.pyplot as plt
 # * sDatasetPath/Patient_1
 # * sDatasetPath/Patient_2
 
-def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2, bRetrain=False):
+def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2, iPretrainEpochs=20, iPretrainPatterns=20000, bRetrain=False):
 
     # List (patients directory name, sensor count) 
     lPatients = [('Dog_1',16),('Dog_2',16),('Dog_3',16),('Dog_4',16),('Dog_5',15),('Patient_1',15),('Patient_2',24)]
@@ -40,9 +40,6 @@ def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2, bRetrain=False)
 
         # Path to patient data
         sPatientPath = os.path.join(sDatasetPath,sPatient)
-
-        # Create a shuffle file if necessary
-        sShufflePath = CreateShuffleFile(sPatientPath)
 
         # Form path to sample rate directory
         sRatePath = os.path.join(sPatientPath, "{:d}Hz".format(round(rSampleFrequency)))
@@ -56,69 +53,74 @@ def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2, bRetrain=False)
         # Preprocess files to desired sample rate if necesary 
         PreprocessMatFiles(sPatientPath, sRatePath, rSampleFrequency)
 
-        # Get base name for the model
-        sLayerFile = GetLayerFileName(sRatePath, iSensors, tlGeometry, "Layers")
+        # Get shuffled file list
+        lShuffle = GetShuffle(sPatientPath)
+
+        # Construct training, validation, test splits
+        tSplits = SplitShuffle(lShuffle, rHoldout)
 
         # Pretrain an autoencoder with the specified geometry if necessary (layers saved to file)
-        oaLayers = PretrainAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout, bRetrain, iEpochs=20, iPatterns=20000)
+        oaLayers = PretrainAutoencoder(sRatePath, tSplits, iSensors, tlGeometry, bRetrain, iPretrainEpochs, iPretrainPatterns)
 
         # Train classifier using the specified geometry (layers read from file)
-        TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout, oaLayers)
+        TrainClassifier(oaLayers, sRatePath, tSplits, iSensors, tlGeometry)
 
     # Consolidate test results from all patients into one file
     ConsolidateTestResults(sDatasetPath, lPatients)
 
-# If sPatientPath/"Shuffle.csv" does not exist, create it and write a randomly shuffled
-# list of all the .mat file names in sPatientPath.
+# If sPatientPath/"Shuffle.csv" exists, rad it into a list and return,
+# else create it and write a randomly shuffled list of all the .mat 
+# file names in sPatientPath.
 #
 # * sPatientPath - specifies the path to patient data
 
-def CreateShuffleFile(sPatientPath):
+def GetShuffle(sPatientPath):
 
     # Path to Shuffle.csv
     sShufflePath = os.path.join(sPatientPath, "Shuffle.csv")
 
     # If Shuffle.csv does not exist...
-    if(not os.path.exists(sShufflePath)):
+    if(os.path.exists(sShufflePath)):
+
+        # Read file into list
+        oFile = open(sShufflePath,'rt')
+        lShuffle = oFile.read().splitlines();
+        oFile.close()
+
+    else:
 
         # Get names of all the .mat files
-        lMatFiles = [f for f in os.listdir(sPatientPath) if(f.endswith('.mat'))]
+        lShuffle = [f[:-4] for f in os.listdir(sPatientPath) if(f.endswith('.mat'))]
 
         # Shuffle the file names
-        random.shuffle(lMatFiles)
+        random.shuffle(lShuffle)
 
         # Open Shuffle.csv
         oFile = open(sShufflePath,'wt')
 
         # For each filename...
-        for s in lMatFiles:
+        for s in lShuffle:
 
-            # Write the filename without extension
-            print(s[:-4], file=oFile)
+            oFile.write(s+"\n")
 
         # Close the file
         oFile.close()
 
-    return(sShufflePath)
+    return(lShuffle)
 
-# Load the specified shuffle file. For interictal and preictal file types, 
-# extract the leading (1-rHoldout) fraction of the files as the training subset
-# and the trailing rHoldout fraction of the files as the validation subset.
-# Extract all test files.
+# For interictal and preictal file types, extract the leading (1-rHoldout) 
+# fraction of the files as the training subset and the trailing rHoldout 
+# fraction of the files as the validation subset.
 #
-# * sSrc - specifies the shuffle file
+# * lFiles - specifies the shuffled filenames
 # * rHoldout - specifies the validation holdout fraction
 
-def LoadShuffleFile(sSrc, rHoldout):
-
-    f = open(sSrc,'rt')
-    l = f.read().split('\n')
-    f.close()
+def SplitShuffle(lFiles, rHoldout):
 
     # Form separate lists of test, interictal, and preictal files
-    lTest   = [s for s in l if('test'       in s)]
-    lTrain0 = [s for s in l if('interictal' in s)]
-    lTrain1 = [s for s in l if('preictal'   in s)]
+    lTest   = [s for s in lFiles if('test'       in s)]
+    lTrain0 = [s for s in lFiles if('interictal' in s)]
+    lTrain1 = [s for s in lFiles if('preictal'   in s)]
 
     # Number of files to retain in each training set
     iTrain0 = round(len(lTrain0)*(1-rHoldout))
@@ -145,7 +147,7 @@ def LoadShuffleFile(sSrc, rHoldout):
 # * rSampleFrequency - specifies the target sample rate
 # * bDetrend - specifies linear detrending if true
 
-def PreprocessMatFiles(sSrc, sDst, rSampleFrequency=400, bDetrend=False):
+def PreprocessMatFiles(sSrc, sDst, rSampleFrequency, bDetrend=False):
 
     # Load the .mat file specified by sFile and return the
     # data array, the number of sensors, the number of samples,
@@ -250,7 +252,7 @@ def PreprocessMatFiles(sSrc, sDst, rSampleFrequency=400, bDetrend=False):
                 # Transform between zero and one
                 raaData = (raaData+1)/2
 
-            # Pickle a tuple with fields we want
+            # Pickle a tuple with the fields we want
             pickle.dump((raaData.T, rFrequency, sClass), open(sDstFile,'wb'))
 
             # Report preprocessing of this file
@@ -259,26 +261,34 @@ def PreprocessMatFiles(sSrc, sDst, rSampleFrequency=400, bDetrend=False):
     # Report preprocessing completion
     print('Preprocessing of {:4d} files complete'.format(len(lFiles)))
 
-# If the specified layers file does not exist, pretrain a stack of layers as a sequence decimating
-# network autoencoder, save the file and return the stack of layers. Otherwise, read the file
-# and return the stack of layers.
+# If the layers file exists and retraining is not specified, and read the layers from the file.
+# Otherwise, pretrain a stack of layers as a sequence decimating network autoencoder and save the
+# layers. Return the stack of layers.
 #
-# * sShufflePath
-# * sRatePath
-# * iSensors
-# * tlGeometry
-# * rHoldout
-# * sModelName
-# * bRetrain
-# * iEpochs
-# * iPatterns
+# * sRatePath - specifies the path to the rate specific training data
+# * tSplits - specifies a tuple with training, validation and test data splits
+# * iSensors - specifies the number of sensors at the input layer
+# * tlGeometry - specifies the layer geometry as a list of (decimation, feature) tuples
+# * bRetrain - true to force retraining even if the layers file exists
+# * iEpochs - specifies the number of epochs to train
+# * iPatterns - specifies the number of patterns per epoch
 
-def PretrainAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout, bRetrain, iEpochs, iPatterns):
+def PretrainAutoencoder(sRatePath, tSplits, iSensors, tlGeometry, bRetrain, iEpochs, iPatterns):
+    
+    # Generate training patterns using the network specified by oalayers Otherwise, pretrain a stack of layers as a sequence decimating network autoencoder and save the
+    # layers. Return the stack of layers.
+    #
+    # * sRatePath - path to the rate specific training data
+    # * lT0 - list of interictal training files
+    # * lT1 - list of preictal training files
+    # * oaLayers - list of layers with which to process the input data to produce the training vector
+    # * iPatterns - specifies the number of training patterns to generate
+    # * iTotalDecimation - specifies the number of patterns per epoch
+    # * iSensors - specifies the number of sensors at the input layer
 
+    def GenerateTrainingPatterns(sRatePath, lT0, lT1, oaLayers, iPatterns, iTotalDecimation, iSensors):
 
-
-    def GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, lT0, lT1, oaLayers):
-
+        # Numbers of interical and preictal training patterns to generate
         iT0 = round(iPatterns/2)
         iT1 = iPatterns - iT0
 
@@ -288,11 +298,13 @@ def PretrainAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout,
         # Get total file count
         iFiles = len(lT0)+len(lT1)
 
+        # Create a permutation index
         ia = numpy.random.permutation(iPatterns)
 
+        # Clear the pattern count
         iPattern  = 0
 
-        # For each file...
+        # For each interictal file...
         for k in range(len(lT0)):
 
             # Get filename
@@ -304,7 +316,7 @@ def PretrainAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout,
             # Measure the data
             (iSamples, iSensors) = raaData.shape
 
-            # Choose random offsets
+            # While more samples are required from this file...
             while(iPattern<(k+1)*iT0/len(lT0)):
 
                 # Compute a random offset
@@ -328,7 +340,7 @@ def PretrainAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout,
             # Measure the data
             (iSamples,iSensors) = raaData.shape
 
-            # Choose random offsets
+            # While more samples are required from this file...
             while(iPattern<(k+1)*iT1/len(lT1)+iT0):
 
                 # Compute a random offset
@@ -340,32 +352,41 @@ def PretrainAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout,
                 # Next pattern
                 iPattern += 1
 
+        # Construct a sequence decimating network from the layer stack
         oSdn = SequenceDecimatingNetwork.SequenceDecimatingNetwork(oaLayers)
 
+        # Apply the sequence decimating network to the training inputs to create training sample inputs
+        # for the current layer
         raaaY = oSdn.ComputeOutputs(raaaX)
 
+        # Reconstruct the input data from the network output
         raaaXr = oSdn.ComputeInputs(raaaY)
 
-        rE = numpy.std(raaaX[:]-raaaXr[:])
+        # Compute the root mean squared reconstruction error
+        rRmse = numpy.sqrt(numpy.mean((raaaX[:]-raaaXr[:])**2))
 
-        print(rE)
+        # Report the reconstruction error of the network with this training batch
+        print("Reconstruction RMSE = {:.6f}".format(rRmse))
 
+        # Measure the network output
         (iP,iSamples,iSensors) = raaaY.shape
 
+        # Reshape the network output to 2D
         raaY = raaaY.reshape(iP, iSamples*iSensors)
 
         return(raaY)
 
+    # Construct layer file name
+    sLayerFile = sRatePath + "\\Layers.pkl"
 
-
-    # If the model already exists...
+    # If the layer file already exists...
     if(bRetrain or not os.path.exists(sLayerFile)):
 
         # Create training options
         oOptions = RbmStack.Options(iEpochs)
 
-        # Load training shuffle
-        (lT0, lT1, lV0, lV1, lTest) = LoadShuffleFile(sShufflePath, rHoldout)
+        # Load training splits
+        (lT0, lT1, lV0, lV1, lTest) = tSplits
 
         # Initialize total decimation ratio
         iTotalDecimation = 1
@@ -373,6 +394,7 @@ def PretrainAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout,
         # Create a list to store sequence decimation layers
         oaLayers = []; 
 
+        # Initial visible layer size is sensor count
         iV = iSensors
 
         # For each network layer...
@@ -391,9 +413,7 @@ def PretrainAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout,
             oRbm = RbmStack.RbmStack([RbmStack.Layer(iV,iH)])
             
             # Generate training patterns
-            raaX = GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, lT0, lT1, oaLayers)
-
-            print(iPatterns, iTotalDecimation)
+            raaX = GenerateTrainingPatterns(sRatePath, lT0, lT1, oaLayers, iPatterns, iTotalDecimation, iSensors)
 
             # Compute the standard deviation of training patterns
             rStd = numpy.std(raaX[:])
@@ -403,18 +423,25 @@ def PretrainAutoencoder(sShufflePath, sRatePath, iSensors, tlGeometry, rHoldout,
             # Train the autoencoder
             oRbm.TrainAutoencoder(raaX, oOptions)
 
-            # Add the new weights
+            # Add the new weights to the layer stack
             oaLayers.append(SequenceDecimatingNetwork.Layer(iDecimation, oRbm.oaLayer[0].raaW, oRbm.oaLayer[0].raH, oRbm.oaLayer[0].raV))
 
             # Hidden outputs are next layer inputs
             iV = iH
 
-        # Generate training patterns
-        raaX = GenerateTrainingPatterns(sRatePath, iPatterns, iTotalDecimation, iSensors, lT0, lT1, oaLayers)
+        # Generate training patterns once more to measure the error performance
+        raaX = GenerateTrainingPatterns(sRatePath, lT0, lT1, oaLayers, iPatterns, iTotalDecimation, iSensors)
 
         # Save layers
         f = open(sLayerFile,"wb")
         pickle.dump(oaLayers, f)
+        f.close()
+
+    else:
+
+        # Load layers
+        f = open(sLayerFile,"rb")
+        oaLayers = pickle.load(f)
         f.close()
 
         return(oaLayers)
@@ -452,34 +479,75 @@ def ConsolidateTestResults(sDatasetPath, lPatients):
 
     fOut.close()
 
+# Perform supervised training of the sequence decimating network using backpropagation with
+#  stochastic gradient descent.
+#
+# * oaLayers - specifies the layer stack to use for the sequence decimating network parameters
+# * sRatePath - path to the rate specific training data
+# * tSplits - training, validation and test splits
+# * iSensors - number of sensors at the input layer
+# * tlGeometry - list of (decimation, features) tuples to define the network geometry
+# * iBatches - number of batches to use for training
+# * iBatchFiles - maximum number of files to load during training (used to cope with inadequate memory)
+# * iBatchPatterns - number of patterns in a batch
 
+def TrainClassifier(oaLayers, sRatePath, tSplits, iSensors, tlGeometry, iBatches=200, iBatchFiles=1000, iBatchPatterns=1000):
 
+    # Learning rate
+    rRate = 0.005
 
-
-
-
-def LoadFiles(sSrc, lFiles):
-
-    raaaData = None;
-
-    iFiles = len(lFiles)
-    for k in range(iFiles):
-        sFile = lFiles[k]+'.pkl'
-        (raaData, rFrequency, sClass) = pickle.load( open(os.path.join(sSrc,sFile),'rb') )
-        if(raaaData==None):
-            raaaData = numpy.empty((iFiles, raaData.shape[0], raaData.shape[1]))
-        raaaData[k,:,:] =  raaData;
-
-    return(raaaData)
-
-def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, oaLayersX, rHoldout=0.2, iBatches=100, iBatchFiles=1000, iBatchPatterns=100):
-
-    rRate = 0.01
+    # Learning momentum
     rMomentum = 0.9
+
+    # Learning weight decay
     rWeightDecay = 0.0001
+
+    # Number of training batches during which to train only the final layer of the network
     iFinalBatches = 2
 
-    def CreateRandomModel(sModelName, iSensors, tlGeometry, rWeightInitScale = 0.001):
+    # Load the specified list of data files from the specified directory and return a numpy
+    # array with the data.
+    #
+    # * sSrc - specifies the directory from which to load files
+    # * lFiles - specifies the list of files to load
+
+    def LoadFiles(sSrc, lFiles):
+
+        # Null the data array
+        raaaData = None
+
+        # Measure the file list 
+        iFiles = len(lFiles)
+
+        # For each file in the list...
+        for k in range(iFiles):
+
+            # Make the filename
+            sFile = lFiles[k]+'.pkl'
+
+            # Load the two dimensional data for a file
+            (raaData, rFrequency, sClass) = pickle.load( open(os.path.join(sSrc,sFile),'rb') )
+
+            # If the data array is null...
+            if(raaaData==None):
+
+                # Create it with the correct shape
+                raaaData = numpy.empty((iFiles, raaData.shape[0], raaData.shape[1]))
+
+            # Insert the two dimensional array as one pattern in the three dimensional array
+            raaaData[k,:,:] = raaData;
+
+        # return the three dimensional array
+        return(raaaData)
+
+    # Create a sequence decimating network with the specified geometry
+    # and small random parameter.
+    #
+    # * iSensors - specifies the number of sensors at the input
+    # * tlGeometry - list of (decimation, features) tuples specifying the network geometry
+    # * rWeightInitScale - standard deviation to use for the parameter values
+
+    def CreateRandomModel(iSensors, tlGeometry, rWeightInitScale = 0.01):
 
         # Create an empty list of layers
         oaLayers = []
@@ -493,13 +561,14 @@ def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, oaLayersX, rH
             # Create a random weight matrix
             raaW = numpy.random.randn(iDecimation*iV,iH)*rWeightInitScale
 
+            # Hidden layer becomes the next visble layer
             iV = iH
 
             # Create a zeros bias vector
-            raB  = numpy.random.randn(iH)*rWeightInitScale
+            raH  = numpy.random.randn(iH)*rWeightInitScale
 
             # Construct a layer
-            oLayer = SequenceDecimatingNetwork.Layer(iDecimation, raaW, raB)
+            oLayer = SequenceDecimatingNetwork.Layer(iDecimation, raaW, raH)
 
             # Add it to the list of layers
             oaLayers.append(oLayer) 
@@ -509,75 +578,79 @@ def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, oaLayersX, rH
 
         return(oModel)
 
-    # Get name for the model
-    sModelName = GetLayerFileName(sRatePath, iSensors, tlGeometry, "Layers")
-
     # If the pretrained model exists...
-    if(os.path.exists(sModelName)):
-
-        # Load layer stack
-        f = open(sModelName,"rb")
-        oaLayers = pickle.load(f)
-        f.close()
+    if(oaLayers):
 
         # Create a sequence decimating network using this layer stack 
         oModel = SequenceDecimatingNetwork.SequenceDecimatingNetwork(oaLayers)
-
-        # Load model
-        f = open(sModelName+"Sdn","rb")
-        oSdn = pickle.load(f)
-        f.close()
-
-        print(oModel==oSdn)
-        print(oModel.hash(), oSdn.hash())
 
     # Otherwise
     else:
 
         # Create a new model
-        oModel = CreateRandomModel(sModelName, iSensors, tlGeometry, rWeightInitScale)
+        oModel = CreateRandomModel(iSensors, tlGeometry)
 
-    iTrainIndex = 0;
-    (lT0, lT1, lV0, lV1, lTest) = LoadShuffleFile(sShufflePath, rHoldout)
+    # Get the
+    (lT0, lT1, lV0, lV1, lTest) = tSplits
 
+    # Clear the traing file indices
     iT0 = 0
     iT1 = 0
 
     # For each training batch...
     for iBatch in range(iBatches):
 
+        # Clear the list of training files
         lTrain = []
+
+        # Array of class targets
         raaaT = numpy.zeros((iBatchFiles,1,1))
+
+        # For each batch file...
         for k in range(iBatchFiles):
+
+            # If even...
             if(k % 2):
+
+                # Append an interictal file to the list
                 lTrain.append(lT0[iT0 % len(lT0)])
                 iT0+=1
             else:
+                # Append a preictal file tio the list
                 lTrain.append(lT1[iT1 % len(lT1)])
                 iT1+=1
+
+            # Add the corrsponding class target
             raaaT[k,0,0] = 'preictal' in lTrain[k]
 
         # Load training files
         raaaX = LoadFiles(sRatePath, lTrain)
+
+        # Measure the training files
         (iPatterns, iSamples, iFeatures) = raaaX.shape
+
+        # Compute the overall decimation ratio
         iD = 1
         for (iDecimation, iH) in tlGeometry:
             iD *= iDecimation
 
-        # print("iDecimation={:d}".format(iD))
+        # Report the decimation ratio
+        print("iDecimation={:d}".format(iD))
 
+        # Create an array for training targets
         raaaXt = numpy.zeros((iPatterns,iD,iFeatures))
 
+        # For each required pattern...
         for p in range(iPatterns):
+
+            # Compute an offset from which to extract the pattern
             iOffset = numpy.random.randint(iSamples-iD)
+
+            # Add this pattern to the training targets
             raaaXt[p,:,:] = raaaX[p,iOffset:iOffset+iD,:]
 
-        #print(oSdn.hash())
-        #print(oModel.hash())
-
         # Run a training batch
-        oSdn.Train(raaaXt, raaaT, iBatchPatterns, rRate, rMomentum, iBatch<iFinalBatches, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
-        #oModel.Train(raaaXt, raaaT, iBatchPatterns, rRate, rMomentum, iBatch<iFinalBatches, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
+        oModel.Train(raaaXt, raaaT, iBatchPatterns, rRate, rMomentum, iBatch<iFinalBatches, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
 
     # Load train files
     lTrain = lT0+lT1
@@ -602,10 +675,4 @@ def TrainClassifier(sShufflePath, sRatePath, iSensors, tlGeometry, oaLayersX, rH
         print("{:s}.mat,{:.6f}".format(lTest[k],raY[k]),file=f)
     f.close()
 
-
-
-
-Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)],.2,True)
-#Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)],.2)
-#Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(8192,1)],.2) #,(8,128),(8,1)],.2)
-#Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(8,1)], 0.2)#,(8,128),(8,1)],.2)
+Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)])

@@ -53,7 +53,10 @@ class Layer:
 		self.raH  = numpy.copy(raH)
 
 		# Biases for each input
-		self.raV  = numpy.copy(raV)
+		if(raV==None):
+			self.raV  = numpy.zeros(raaW.shape[0])
+		else:
+			self.raV  = numpy.copy(raV)
 
 	def __eq__(self, other):
 		bEqual = self.iDecimation == other.iDecimation
@@ -667,32 +670,17 @@ class SequenceDecimatingNetwork:
 			# Update the biases with no momentum
 			raDelta[self.iWeights:] = raG[self.iWeights:]*rRate
 
-			#print("raG", numpy.sum(raG))
-			#print("raW", numpy.sum(raW))
-
 			# Update the local weights
-			#raW = raW - raDelta
-			raW[0] += 1
-
-			#print("raW", numpy.sum(raW))
-			#print("raDelta", numpy.sum(raDelta))
+			raW = raW - raDelta
 
 			# Insert updated weights into the network
 			self.SetWeightVector(raW)
-
-			for k in range(len(self.oaLayers)):
-				print(k,numpy.sum(self.oaLayers[k].raaW))
-			#print("raW", numpy.sum(raW))			
-
-			#print("raP", numpy.sum(self.raP))
 
 			# If we've reached the end of the input array...
 			if(i0==iPatternsX):
 
 				# Wrap to the beginning
 				i0 = 0
-
-			print(iPattern, self.hash())
 
 	## (raG) = GetGradientVector(self)
 	# Get the gradient of error with respect to all learnable network parameters as a vector.

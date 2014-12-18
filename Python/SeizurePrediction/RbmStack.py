@@ -33,7 +33,7 @@ class Layer:
         self.iV = iV
         self.iH = iH
 
-        # Initialize random weights
+        # Initialize random weights      
         self.raaW = numpy.random.randn(iV,iH) * rInitialWeightVariance
 
         # Clear the biases
