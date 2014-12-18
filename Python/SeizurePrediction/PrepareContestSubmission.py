@@ -63,7 +63,7 @@ def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2, iPretrainEpochs
         oaLayers = PretrainAutoencoder(sRatePath, tSplits, iSensors, tlGeometry, bRetrain, iPretrainEpochs, iPretrainPatterns)
 
         # Train classifier using the specified geometry (layers read from file)
-        oModel = TrainClassifier(oaLayers, sRatePath, tSplits, iSensors, tlGeometry, True)
+        oModel = TrainClassifier(oaLayers, sRatePath, tSplits, iSensors, tlGeometry, bRetrain)
 
         # Process training, validation, and test files using the trained model
         ProcessAllFiles(oModel, sRatePath, tSplits, tlGeometry)
@@ -649,6 +649,63 @@ def LoadFiles(sSrc, lFiles):
     # return the three dimensional array
     return(raaaData)
 
+# Compute points on ROC curve.
+# Just added this. It doesn't seem to be working.
+
+def ComputeRocCurve(sRatePath, sFile):
+    
+    # Key function to enable sorting on the prediction field of the list
+    def getkey(item):
+        return(item[1])
+
+    # Open the file
+    f = open(os.path.join(sRatePath,sFile),'rt')
+    l = f.read().splitlines()
+    f.close()
+
+    # Form a list of [filename, prediction, actual]
+    l = [[s.split(',')[0], float(s.split(',')[1]), int('preictal' in s.lower())] for s in l]
+
+    # Sort on the prediction field
+    l.sort(key=getkey)
+
+    raX = numpy.zeros(len(l))
+    raY = numpy.zeros(len(l))
+
+    # Clear positive and negative counters
+    iPositives = 0
+    iNegatives = 0
+
+    # For each threshold...
+    for k in range(1,len(l)):
+
+        iPositives = len(l)-k
+        iNegatives = k
+
+        # Clear false positives counter
+        iFalsePositives = 0
+
+        # For each below threshold value...
+        for j in range(k):
+
+            # Count false positives
+            iFalsePositives += l[j][2]
+
+        # Clear true positives counter
+        iTruePositives  = 0
+
+        # For each above threshold value...
+        for j in range(k, len(l)):
+
+            # Count true positives
+            iTruePositives  += l[j][2]
+
+        raX[k] = iFalsePositives/iNegatives
+        raY[k] = iTruePositives /iPositives
+
+    # Return points on the ROC curve
+    return((raX, raY))
+
 def ProcessAllFiles(oModel, sRatePath, tSplits, tlGeometry):
 
     # Compute the overall decimation ratio
@@ -662,8 +719,18 @@ def ProcessAllFiles(oModel, sRatePath, tSplits, tlGeometry):
     # Process all training files with model
     ProcessFiles(oModel, sRatePath, lT0+lT1, "Train.csv", iD)
 
+    # Compute training ROC curve
+    # (raTX, raTY) = ComputeRocCurve(sRatePath, "Train.csv")
+
     # Process all training files with model
     ProcessFiles(oModel, sRatePath, lV0+lV1, "Validation.csv", iD)        
+
+    # Compute validation ROC curve
+    # (raVX, raVY) = ComputeRocCurve(sRatePath, "Train.csv")
+
+    # Plot ROC curves
+    # plt.plot(raTX, raTY)
+    # plt.show()
 
     # Process all test files with model
     ProcessFiles(oModel, sRatePath, lTest, "Test.csv", iD)
@@ -725,4 +792,4 @@ def ConsolidateTestResults(sDatasetPath, lPatients):
     # Close the file
     fOut.close()
 
-Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)])   
+# Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)])   
