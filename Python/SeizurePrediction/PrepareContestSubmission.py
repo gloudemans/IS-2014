@@ -63,7 +63,10 @@ def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2, iPretrainEpochs
         oaLayers = PretrainAutoencoder(sRatePath, tSplits, iSensors, tlGeometry, bRetrain, iPretrainEpochs, iPretrainPatterns)
 
         # Train classifier using the specified geometry (layers read from file)
-        TrainClassifier(oaLayers, sRatePath, tSplits, iSensors, tlGeometry)
+        oModel = TrainClassifier(oaLayers, sRatePath, tSplits, iSensors, tlGeometry, True)
+
+        # Process training, validation, and test files using the trained model
+        ProcessAllFiles(oModel, sRatePath, tSplits, tlGeometry)
 
     # Consolidate test results from all patients into one file
     ConsolidateTestResults(sDatasetPath, lPatients)
@@ -444,40 +447,7 @@ def PretrainAutoencoder(sRatePath, tSplits, iSensors, tlGeometry, bRetrain, iEpo
         oaLayers = pickle.load(f)
         f.close()
 
-        return(oaLayers)
-
-# Consolidate test results from all patients into a single file.
-#
-# Reads patient test result from:
-#  sDatasetPath/sPatient/sRate/"Test.csv"
-#
-# Writes consolidated results to:
-#  sDatasetPath/"Upload.csv"
-
-def ConsolidateTestResults(sDatasetPath, lPatients):
-
-    # Read file into list
-    fOut = open(os.path.join(sDatasetPath,"Upload.csv"),'wt')
-    fOut.write("clip,preictal\n".format())
-
-    # For each patient...
-    for (sPatient,iSensors) in lPatients:
-
-        # Path to patient data
-        sPatientPath = os.path.join(sDatasetPath,sPatient)
-
-        # Path to sample rate directory
-        sRatePath = os.path.join(sPatientPath, "{:d}Hz".format(round(rSampleFrequency)),"Test.csv")
-
-        # Read file into list
-        f = open(sRatePath,'rt')
-        l = f.read()
-        f.close()
-
-        # Write to upload file
-        fOut.write(l)
-
-    fOut.close()
+    return(oaLayers)
 
 # Perform supervised training of the sequence decimating network using backpropagation with
 #  stochastic gradient descent.
@@ -491,10 +461,10 @@ def ConsolidateTestResults(sDatasetPath, lPatients):
 # * iBatchFiles - maximum number of files to load during training (used to cope with inadequate memory)
 # * iBatchPatterns - number of patterns in a batch
 
-def TrainClassifier(oaLayers, sRatePath, tSplits, iSensors, tlGeometry, iBatches=200, iBatchFiles=1000, iBatchPatterns=1000):
+def TrainClassifier(oaLayers, sRatePath, tSplits, iSensors, tlGeometry, bRetrain=False, bRandomModel=False, iBatches=200, iBatchFiles=1000, iBatchPatterns=10000):
 
     # Learning rate
-    rRate = 0.005
+    rRate = 0.001
 
     # Learning momentum
     rMomentum = 0.9
@@ -504,41 +474,6 @@ def TrainClassifier(oaLayers, sRatePath, tSplits, iSensors, tlGeometry, iBatches
 
     # Number of training batches during which to train only the final layer of the network
     iFinalBatches = 2
-
-    # Load the specified list of data files from the specified directory and return a numpy
-    # array with the data.
-    #
-    # * sSrc - specifies the directory from which to load files
-    # * lFiles - specifies the list of files to load
-
-    def LoadFiles(sSrc, lFiles):
-
-        # Null the data array
-        raaaData = None
-
-        # Measure the file list 
-        iFiles = len(lFiles)
-
-        # For each file in the list...
-        for k in range(iFiles):
-
-            # Make the filename
-            sFile = lFiles[k]+'.pkl'
-
-            # Load the two dimensional data for a file
-            (raaData, rFrequency, sClass) = pickle.load( open(os.path.join(sSrc,sFile),'rb') )
-
-            # If the data array is null...
-            if(raaaData==None):
-
-                # Create it with the correct shape
-                raaaData = numpy.empty((iFiles, raaData.shape[0], raaData.shape[1]))
-
-            # Insert the two dimensional array as one pattern in the three dimensional array
-            raaaData[k,:,:] = raaData;
-
-        # return the three dimensional array
-        return(raaaData)
 
     # Create a sequence decimating network with the specified geometry
     # and small random parameter.
@@ -578,101 +513,216 @@ def TrainClassifier(oaLayers, sRatePath, tSplits, iSensors, tlGeometry, iBatches
 
         return(oModel)
 
-    # If the pretrained model exists...
-    if(oaLayers):
+    # Construct layer file name
+    sModelFile = sRatePath + "\\Model.pkl"
+
+    # If the layer file already exists...
+    if(bRetrain or not os.path.exists(sModelFile)):
+
+        # If the pretrained model exists...
+        if(bRandomModel):
+
+            # Create a new model
+            oModel = CreateRandomModel(iSensors, tlGeometry)
+
+        # Otherwise
+        else:   
+
+            # Create a sequence decimating network using this layer stack 
+            oModel = SequenceDecimatingNetwork.SequenceDecimatingNetwork(oaLayers)
+
+        # Get the file splits
+        (lT0, lT1, lV0, lV1, lTest) = tSplits
+
+        # Clear the traing file indices
+        iT0 = 0
+        iT1 = 0
+
+        # For each training batch...
+        for iBatch in range(iBatches):
+
+            # Clear the list of training files
+            lTrain = []
+
+            # Array of class targets
+            raaaT = numpy.zeros((iBatchFiles,1,1))
+
+            # For each batch file...
+            for k in range(iBatchFiles):
+
+                # If even...
+                if(k % 2):
+
+                    # Append an interictal file to the list
+                    lTrain.append(lT0[iT0 % len(lT0)])
+                    iT0+=1
+                else:
+                    # Append a preictal file tio the list
+                    lTrain.append(lT1[iT1 % len(lT1)])
+                    iT1+=1
+
+                # Add the corrsponding class target
+                raaaT[k,0,0] = 'preictal' in lTrain[k]
+
+            # Load training files
+            raaaX = LoadFiles(sRatePath, lTrain)
+
+            # Measure the training files
+            (iPatterns, iSamples, iFeatures) = raaaX.shape
+
+            # Compute the overall decimation ratio
+            iD = 1
+            for (iDecimation, iH) in tlGeometry:
+                iD *= iDecimation
+
+            # Report the decimation ratio
+            print("iDecimation={:d}".format(iD))
+
+            # Create an array for training targets
+            raaaXt = numpy.zeros((iPatterns,iD,iFeatures))
+
+            # For each required pattern...
+            for p in range(iPatterns):
+
+                # Compute an offset from which to extract the pattern
+                iOffset = numpy.random.randint(iSamples-iD)
+
+                # Add this pattern to the training targets
+                raaaXt[p,:,:] = raaaX[p,iOffset:iOffset+iD,:]
+
+            # Run a training batch
+            oModel.Train(raaaXt, raaaT, iBatchPatterns, rRate, rMomentum, iBatch<iFinalBatches, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
+
+        # Save layers
+        f = open(sModelFile,"wb")
+        pickle.dump(oModel.oaLayers, f)
+        f.close()
+
+    else:
+
+        # Load layers
+        f = open(sModelFile,"rb")
+        oaLayers = pickle.load(f)
+        f.close()
 
         # Create a sequence decimating network using this layer stack 
         oModel = SequenceDecimatingNetwork.SequenceDecimatingNetwork(oaLayers)
 
-    # Otherwise
-    else:
+    # Return the model
+    return(oModel)
 
-        # Create a new model
-        oModel = CreateRandomModel(iSensors, tlGeometry)
+    # Construct sequence decimating network from layers
+    oModel = SequenceDecimatingNetwork(oaLayers)
 
-    # Get the
+# Load the specified list of data files from the specified directory and return a numpy
+# array with the data.
+#
+# * sSrc - specifies the directory from which to load files
+# * lFiles - specifies the list of files to load
+
+def LoadFiles(sSrc, lFiles):
+
+    # Null the data array
+    raaaData = None
+
+    # Measure the file list 
+    iFiles = len(lFiles)
+
+    # For each file in the list...
+    for k in range(iFiles):
+
+        # Make the filename
+        sFile = lFiles[k]+'.pkl'
+
+        # Load the two dimensional data for a file
+        (raaData, rFrequency, sClass) = pickle.load( open(os.path.join(sSrc,sFile),'rb') )
+
+        # If the data array is null...
+        if(raaaData==None):
+
+            # Create it with the correct shape
+            raaaData = numpy.empty((iFiles, raaData.shape[0], raaData.shape[1]))
+
+        # Insert the two dimensional array as one pattern in the three dimensional array
+        raaaData[k,:,:] = raaData;
+
+    # return the three dimensional array
+    return(raaaData)
+
+def ProcessAllFiles(oModel, sRatePath, tSplits, tlGeometry):
+
+    # Compute the overall decimation ratio
+    iD = 1
+    for (iDecimation, iH) in tlGeometry:
+        iD *= iDecimation
+
+    # Get file splits
     (lT0, lT1, lV0, lV1, lTest) = tSplits
 
-    # Clear the traing file indices
-    iT0 = 0
-    iT1 = 0
+    # Process all training files with model
+    ProcessFiles(oModel, sRatePath, lT0+lT1, "Train.csv", iD)
 
-    # For each training batch...
-    for iBatch in range(iBatches):
+    # Process all training files with model
+    ProcessFiles(oModel, sRatePath, lV0+lV1, "Validation.csv", iD)        
 
-        # Clear the list of training files
-        lTrain = []
+    # Process all test files with model
+    ProcessFiles(oModel, sRatePath, lTest, "Test.csv", iD)
 
-        # Array of class targets
-        raaaT = numpy.zeros((iBatchFiles,1,1))
+def ProcessFiles(oModel, sRatePath, lFiles, sFile, iDecimation):
 
-        # For each batch file...
-        for k in range(iBatchFiles):
+    # Load the files
+    raaaX = LoadFiles(sRatePath, lFiles)
 
-            # If even...
-            if(k % 2):
+    # Extract test patterns from the initial samples of each pattern
+    raaaXt = raaaX[:,:iDecimation,:]    
 
-                # Append an interictal file to the list
-                lTrain.append(lT0[iT0 % len(lT0)])
-                iT0+=1
-            else:
-                # Append a preictal file tio the list
-                lTrain.append(lT1[iT1 % len(lT1)])
-                iT1+=1
-
-            # Add the corrsponding class target
-            raaaT[k,0,0] = 'preictal' in lTrain[k]
-
-        # Load training files
-        raaaX = LoadFiles(sRatePath, lTrain)
-
-        # Measure the training files
-        (iPatterns, iSamples, iFeatures) = raaaX.shape
-
-        # Compute the overall decimation ratio
-        iD = 1
-        for (iDecimation, iH) in tlGeometry:
-            iD *= iDecimation
-
-        # Report the decimation ratio
-        print("iDecimation={:d}".format(iD))
-
-        # Create an array for training targets
-        raaaXt = numpy.zeros((iPatterns,iD,iFeatures))
-
-        # For each required pattern...
-        for p in range(iPatterns):
-
-            # Compute an offset from which to extract the pattern
-            iOffset = numpy.random.randint(iSamples-iD)
-
-            # Add this pattern to the training targets
-            raaaXt[p,:,:] = raaaX[p,iOffset:iOffset+iD,:]
-
-        # Run a training batch
-        oModel.Train(raaaXt, raaaT, iBatchPatterns, rRate, rMomentum, iBatch<iFinalBatches, lambda iPattern, rError, rRmse: print("iPattern={:6d}, rError={:8.4f}, rRmse={:.6f}".format(iPattern,rError,rRmse)))
-
-    # Load train files
-    lTrain = lT0+lT1
-    raaaX = LoadFiles(sRatePath, lTrain)
-    raaaXt = raaaX[:,:iD,:]    
+    # Compute sequence decimating network outputs
     raY = numpy.squeeze(oModel.ComputeOutputs(raaaXt))
 
-    f = open(os.path.join(sRatePath,'Train.csv'),'wt')
+    # Open the output file
+    f = open(os.path.join(sRatePath,sFile),'wt')
 
-    for k in range(len(lTrain)):
-        print("{:s}.mat,{:.6f}".format(lTrain[k],raY[k]),file=f)
+    # For each file...
+    for k in range(len(lFiles)):
+
+        # Save comma separated filename, prediction pairs
+        print("{:s}.mat,{:.6f}".format(lFiles[k], raY[k]), file=f)
+    
+    # Close the file
     f.close()
 
-    # Load test files
-    raaaX = LoadFiles(sRatePath, lTest)
-    raaaXt = raaaX[:,:iD,:]    
-    raY = numpy.squeeze(oModel.ComputeOutputs(raaaXt))
+# Consolidate test results from all patients into a single file.
+#
+# Reads patient test result from:
+#  sDatasetPath/sPatient/sRate/"Test.csv"
+#
+# Writes consolidated results to:
+#  sDatasetPath/"Upload.csv"
 
-    f = open(os.path.join(sRatePath,'Test.csv'),'wt')
+def ConsolidateTestResults(sDatasetPath, lPatients):
 
-    for k in range(len(lTest)):
-        print("{:s}.mat,{:.6f}".format(lTest[k],raY[k]),file=f)
-    f.close()
+    # Read file into list
+    fOut = open(os.path.join(sDatasetPath,"Upload.csv"),'wt')
+    fOut.write("clip,preictal\n".format())
 
-Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)])
+    # For each patient...
+    for (sPatient,iSensors) in lPatients:
+
+        # Path to patient data
+        sPatientPath = os.path.join(sDatasetPath,sPatient)
+
+        # Path to sample rate directory
+        sRatePath = os.path.join(sPatientPath, "{:d}Hz".format(round(rSampleFrequency)),"Test.csv")
+
+        # Read file into list
+        f = open(sRatePath,'rt')
+        l = f.read()
+        f.close()
+
+        # Write to upload file
+        fOut.write(l)
+
+    # Close the file
+    fOut.close()
+
+Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)])   

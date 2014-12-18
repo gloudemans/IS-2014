@@ -145,15 +145,10 @@ class SequenceDecimatingNetwork:
 		self.bUseGpu = bUseGpu and bCudamatLoaded
 
 		# List of connection layers
-		self.oaLayers = list(oaLayers)
+		self.oaLayers = copy.deepcopy(oaLayers)
 
 		# Number of connection layers in the network
 		self.iLayers = len(self.oaLayers)
-
-		for oLayer in self.oaLayers:
-			oLayer.raaW = numpy.copy(oLayer.raaW)
-			oLayer.raH = numpy.copy(oLayer.raH)
-			oLayer.raV = numpy.copy(oLayer.raV)	
 
 		# List of states
 		self.oaStates = []
