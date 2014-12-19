@@ -30,7 +30,7 @@ import matplotlib.pyplot as plt
 # * sDatasetPath/Patient_1
 # * sDatasetPath/Patient_2
 
-def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2, iPretrainEpochs=20, iPretrainPatterns=20000, bRetrain=False):
+def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2, iPretrainEpochs=50, iPretrainPatterns=20000, bRetrain=False):
 
     # List (patients directory name, sensor count) 
     lPatients = [('Dog_1',16),('Dog_2',16),('Dog_3',16),('Dog_4',16),('Dog_5',15),('Patient_1',15),('Patient_2',24)]
@@ -66,10 +66,10 @@ def Go(sDatasetPath, rSampleFrequency, tlGeometry, rHoldout=0.2, iPretrainEpochs
         oModel = TrainClassifier(oaLayers, sRatePath, tSplits, iSensors, tlGeometry, bRetrain)
 
         # Process training, validation, and test files using the trained model
-        ProcessAllFiles(oModel, sRatePath, tSplits, tlGeometry)
+        ProcessAllFiles(oModel, sRatePath, tSplits, tlGeometry, sPatient)
 
     # Consolidate test results from all patients into one file
-    ConsolidateTestResults(sDatasetPath, lPatients)
+    ConsolidateTestResults(sDatasetPath, lPatients, rSampleFrequency)
 
 # If sPatientPath/"Shuffle.csv" exists, rad it into a list and return,
 # else create it and write a randomly shuffled list of all the .mat 
@@ -461,7 +461,7 @@ def PretrainAutoencoder(sRatePath, tSplits, iSensors, tlGeometry, bRetrain, iEpo
 # * iBatchFiles - maximum number of files to load during training (used to cope with inadequate memory)
 # * iBatchPatterns - number of patterns in a batch
 
-def TrainClassifier(oaLayers, sRatePath, tSplits, iSensors, tlGeometry, bRetrain=False, bRandomModel=False, iBatches=200, iBatchFiles=1000, iBatchPatterns=10000):
+def TrainClassifier(oaLayers, sRatePath, tSplits, iSensors, tlGeometry, bRetrain=False, bRandomModel=False, iBatches=100, iBatchFiles=1000, iBatchPatterns=10000):
 
     # Learning rate
     rRate = 0.001
@@ -677,36 +677,35 @@ def ComputeRocCurve(sRatePath, sFile):
     iNegatives = 0
 
     # For each threshold...
-    for k in range(1,len(l)):
+    for k in range(0,len(l)-1):
 
-        iPositives = len(l)-k
-        iNegatives = k
+        # At threshold k, the classifier indicates k negatives and len-k positives
+        iPositives +=   l[k][2]
+        iNegatives += 1-l[k][2]
+
+    # For each threshold...
+    for k in range(0,len(l)-1):
 
         # Clear false positives counter
         iFalsePositives = 0
-
-        # For each below threshold value...
-        for j in range(k):
-
-            # Count false positives
-            iFalsePositives += l[j][2]
-
-        # Clear true positives counter
         iTruePositives  = 0
 
         # For each above threshold value...
         for j in range(k, len(l)):
 
-            # Count true positives
-            iTruePositives  += l[j][2]
+            # True positive if j>=k and true result was positive
+            iTruePositives  +=   l[j][2]            
+            iFalsePositives += 1-l[j][2]
 
         raX[k] = iFalsePositives/iNegatives
         raY[k] = iTruePositives /iPositives
 
+
+
     # Return points on the ROC curve
     return((raX, raY))
 
-def ProcessAllFiles(oModel, sRatePath, tSplits, tlGeometry):
+def ProcessAllFiles(oModel, sRatePath, tSplits, tlGeometry, sPatient, bPlot=False):
 
     # Compute the overall decimation ratio
     iD = 1
@@ -719,21 +718,32 @@ def ProcessAllFiles(oModel, sRatePath, tSplits, tlGeometry):
     # Process all training files with model
     ProcessFiles(oModel, sRatePath, lT0+lT1, "Train.csv", iD)
 
-    # Compute training ROC curve
-    # (raTX, raTY) = ComputeRocCurve(sRatePath, "Train.csv")
-
     # Process all training files with model
-    ProcessFiles(oModel, sRatePath, lV0+lV1, "Validation.csv", iD)        
-
-    # Compute validation ROC curve
-    # (raVX, raVY) = ComputeRocCurve(sRatePath, "Train.csv")
-
-    # Plot ROC curves
-    # plt.plot(raTX, raTY)
-    # plt.show()
+    ProcessFiles(oModel, sRatePath, lV0+lV1, "Validation.csv", iD) 
 
     # Process all test files with model
-    ProcessFiles(oModel, sRatePath, lTest, "Test.csv", iD)
+    ProcessFiles(oModel, sRatePath, lTest, "Test.csv", iD)           
+
+    # Compute training ROC curve
+    (raTX, raTY) = ComputeRocCurve(sRatePath, "Train.csv")
+
+    # Compute validation ROC curve
+    (raVX, raVY) = ComputeRocCurve(sRatePath, "Validation.csv")
+
+    if(bPlot):
+
+        # Plot ROC curves
+        plt.plot(raTX, raTY,  label="Training") 
+        plt.plot(raVX, raVY,  label="Validation")
+        plt.plot([0,1],[0,1], label="Reference")
+        plt.title("ROC Curve for {:s}".format(sPatient))
+        plt.ylim(0,1)
+        plt.xlim(0,1)
+        plt.legend(loc=4)
+        plt.grid()
+        plt.show()
+
+
 
 def ProcessFiles(oModel, sRatePath, lFiles, sFile, iDecimation):
 
@@ -766,7 +776,7 @@ def ProcessFiles(oModel, sRatePath, lFiles, sFile, iDecimation):
 # Writes consolidated results to:
 #  sDatasetPath/"Upload.csv"
 
-def ConsolidateTestResults(sDatasetPath, lPatients):
+def ConsolidateTestResults(sDatasetPath, lPatients, rSampleFrequency):
 
     # Read file into list
     fOut = open(os.path.join(sDatasetPath,"Upload.csv"),'wt')
@@ -792,4 +802,4 @@ def ConsolidateTestResults(sDatasetPath, lPatients):
     # Close the file
     fOut.close()
 
-# Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)])   
+Go('C:\\Users\\Mark\\Documents\\GitHub\\IS-2014\\Datasets\\Kaggle Seizure Prediction Challenge\\Raw',20,[(16,128),(2,128),(2,128),(2,128),(2,1)])   
